@@ -1,0 +1,61 @@
+<section class="panel">
+  <h2>Suscripción</h2>
+  @if (subscription(); as s) {
+    @if (s.active) {
+      <p><span class="badge" data-status="CONFIRMADA">ACTIVA</span> ${{ s.amount }} USD/mes · vigente del {{ s.start }} al {{ s.end }}
+        @if (s.cardLast4) { · {{ s.cardBrand }} •••• {{ s.cardLast4 }} }</p>
+    } @else {
+      <p><span class="badge" data-status="CANCELADA">INACTIVA</span> Tu suscripción venció el {{ s.end }}.</p>
+    }
+  } @else {
+    <p><span class="badge" data-status="PENDIENTE">SIN SUSCRIPCIÓN</span> Suscríbete para aparecer en el marketplace y usar el panel.</p>
+  }
+  <form class="grid-form" (ngSubmit)="pay()">
+    <label>Titular <input name="cardHolder" [(ngModel)]="card.cardHolder" required></label>
+    <label>Número de tarjeta <input name="cardNumber" [(ngModel)]="card.cardNumber" required autocomplete="off"></label>
+    <label>Mes <input type="number" name="expMonth" min="1" max="12" [(ngModel)]="card.expMonth"></label>
+    <label>Año <input type="number" name="expYear" [(ngModel)]="card.expYear"></label>
+    <label>CVV <input name="cvv" [(ngModel)]="card.cvv" maxlength="4" autocomplete="off"></label>
+    <button type="submit">{{ subscription()?.active ? 'Pagar otro mes ($20 USD)' : 'Pagar $20 USD' }}</button>
+  </form>
+  <p class="muted">Pago simulado. Aprobada: 4242 4242 4242 4242 · Rechazada: 4000 0000 0000 0002.</p>
+  @if (subscriptionMessage()) { <p role="status" class="notice">{{ subscriptionMessage() }}</p> }
+</section>
+
+<section class="panel">
+  <h2>Horario semanal de atención</h2>
+  @for (block of blocks; track $index) {
+    <div class="row">
+      <select [name]="'day' + $index" [(ngModel)]="block.day">
+        @for (d of days; track d.value) { <option [ngValue]="d.value">{{ d.name }}</option> }
+      </select>
+      <input type="time" [name]="'start' + $index" [(ngModel)]="block.start">
+      <span>a</span>
+      <input type="time" [name]="'end' + $index" [(ngModel)]="block.end">
+      <button type="button" class="link danger-text" (click)="removeBlock($index)">Quitar</button>
+    </div>
+  } @empty { <p class="muted">Sin horario: los pacientes no pueden agendar contigo.</p> }
+  <div class="row">
+    <button type="button" class="secondary" (click)="addBlock()">Agregar bloque</button>
+    <button type="button" (click)="saveSchedule()">Publicar horario</button>
+  </div>
+  @if (scheduleMessage()) { <p role="status" class="notice">{{ scheduleMessage() }}</p> }
+</section>
+
+<section class="panel">
+  <div class="row">
+    <h2>Pacientes que me dieron acceso</h2>
+    <button type="button" class="secondary" (click)="loadPatients()">Actualizar</button>
+  </div>
+  @if (patientsMessage()) { <p role="status" class="notice">{{ patientsMessage() }}</p> }
+  <ul class="compact">
+    @for (p of patients(); track p.patientId) {
+      <li>{{ p.name || p.email }} <span class="muted">· acceso desde {{ formatDateTime(p.accessSince) }}</span>
+        <button type="button" class="link" (click)="openRecord(p)">Ver expediente</button></li>
+    } @empty { <li>Ningún paciente te ha dado acceso todavía.</li> }
+  </ul>
+  @if (patientRecord()) {
+    <h3>Expediente de {{ patientRecord()?.patient?.name }}</h3>
+    <midoc-expediente-vista [record]="patientRecord()" />
+  }
+</section>

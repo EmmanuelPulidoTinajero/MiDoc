@@ -1,29 +1,35 @@
 <main class="page">
   <header>
-    <p class="eyebrow">MiDoc</p>
+    <div class="row top">
+      <p class="eyebrow">MiDoc</p>
+      @if (api.user(); as user) {
+        <p class="session">{{ user.name || user.email }} · {{ user.role }}
+          <button type="button" class="link" (click)="logout()">Cerrar sesión</button></p>
+      } @else {
+        <button type="button" class="secondary" (click)="tab.set('acceso')">Iniciar sesión o crear cuenta</button>
+      }
+    </div>
     <h1>Encuentra atención médica y controla tu expediente.</h1>
-    <p>Demo del flujo de búsqueda y agenda. Los datos son ficticios.</p>
+    <p>Pacientes gratis; profesionales con suscripción de $20 USD/mes. Los datos son ficticios.</p>
   </header>
 
-  <section class="search" aria-labelledby="search-title">
-    <h2 id="search-title">Buscar profesionales</h2>
-    <form (ngSubmit)="search()">
-      <label for="specialty">Especialidad</label>
-      <input id="specialty" name="specialty" [(ngModel)]="specialty" placeholder="Ejemplo: medicina familiar">
-      <button type="submit">Buscar</button>
-    </form>
-    <p role="status">{{ message }}</p>
-  </section>
+  <nav class="tabs" aria-label="Secciones">
+    <button type="button" [class.active]="tab() === 'buscar'" (click)="tab.set('buscar')">Buscar profesionales</button>
+    @if (api.isPatient()) {
+      <button type="button" [class.active]="tab() === 'citas'" (click)="tab.set('citas')">Mis citas</button>
+      <button type="button" [class.active]="tab() === 'expediente'" (click)="tab.set('expediente')">Mi expediente</button>
+    }
+    @if (api.isDoctor()) {
+      <button type="button" [class.active]="tab() === 'citas'" (click)="tab.set('citas')">Agenda</button>
+      <button type="button" [class.active]="tab() === 'panel'" (click)="tab.set('panel')">Mi panel</button>
+    }
+  </nav>
 
-  <section aria-labelledby="results-title">
-    <h2 id="results-title">Resultados</h2>
-    <div class="cards">
-      <article class="card" *ngFor="let doctor of doctors">
-        <h3>{{ doctor.name }}</h3>
-        <p>{{ doctor.specialty }} · {{ doctor.location }}</p>
-        <p>Consulta: ${{ doctor.price }} MXN</p>
-        <button type="button" (click)="book(doctor)">Agendar cita</button>
-      </article>
-    </div>
-  </section>
+  @switch (tab()) {
+    @case ('acceso') { <midoc-acceso (done)="signedIn()" /> }
+    @case ('citas') { <midoc-citas /> }
+    @case ('expediente') { <midoc-expediente /> }
+    @case ('panel') { <midoc-panel-doctor /> }
+    @default { <midoc-busqueda (loginRequested)="tab.set('acceso')" /> }
+  }
 </main>
