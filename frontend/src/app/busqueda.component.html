@@ -1,0 +1,68 @@
+<section class="panel" aria-labelledby="search-title">
+  <h2 id="search-title">Buscar profesionales</h2>
+  <form class="grid-form" (ngSubmit)="search()">
+    <label>Especialidad
+      <input name="specialty" [(ngModel)]="specialty" placeholder="Ejemplo: medicina familiar">
+    </label>
+    <label>Ciudad o ubicación
+      <input name="location" [(ngModel)]="location" placeholder="Ejemplo: Guadalajara">
+    </label>
+    <label>Nombre o palabra clave
+      <input name="text" [(ngModel)]="text" placeholder="Ejemplo: Ana">
+    </label>
+    <button type="submit">Buscar</button>
+  </form>
+  <p role="status">{{ message() }}</p>
+</section>
+
+<section aria-labelledby="results-title">
+  <h2 id="results-title">Resultados</h2>
+  <div class="cards">
+    @for (doctor of doctors(); track doctor.id) {
+      <article class="card" [class.selected]="selected()?.id === doctor.id">
+        <h3>{{ doctor.name }}</h3>
+        <p>{{ doctor.specialty }} · {{ doctor.location }}</p>
+        <p>Consulta: ${{ doctor.price }} MXN</p>
+        <button type="button" (click)="open(doctor)">Ver perfil y agendar</button>
+      </article>
+    }
+  </div>
+</section>
+
+@if (selected(); as doctor) {
+  <section class="panel" aria-labelledby="doctor-title">
+    <h2 id="doctor-title">{{ doctor.name }}</h2>
+    <p class="muted">{{ doctor.type === 'CLINICA' ? 'Clínica' : 'Doctor(a)' }} · {{ doctor.specialty }} · {{ doctor.location }}{{ doctor.city && doctor.city !== doctor.location ? ', ' + doctor.city : '' }}</p>
+    @if (doctor.description) { <p>{{ doctor.description }}</p> }
+    <p>Consulta de {{ doctor.durationMin }} minutos: <strong>${{ doctor.price }} MXN</strong></p>
+
+    <h3>Horario semanal</h3>
+    <ul class="compact">
+      @for (block of doctor.schedule ?? []; track $index) {
+        <li>{{ days[block.dia_semana] }}: {{ block.hora_inicio }} a {{ block.hora_fin }}</li>
+      } @empty {
+        <li>El profesional aún no publica su horario.</li>
+      }
+    </ul>
+
+    <h3>Agendar cita</h3>
+    <div class="grid-form">
+      <label>Fecha
+        <input type="date" name="date" [min]="minDate" [(ngModel)]="date" (change)="loadSlots()">
+      </label>
+      <label>Motivo de la consulta (opcional)
+        <input name="reason" [(ngModel)]="reason" maxlength="500" placeholder="Ejemplo: chequeo general">
+      </label>
+    </div>
+    @if (slotsMessage()) { <p class="muted">{{ slotsMessage() }}</p> }
+    <div class="slots">
+      @for (slot of slots(); track slot) {
+        <button type="button" class="secondary" (click)="book(slot)">{{ formatTime(slot) }}</button>
+      }
+    </div>
+    @if (api.isPatient()) {
+      <p><button type="button" class="link" (click)="grantAccess()">Dar acceso a mi expediente a este profesional</button></p>
+    }
+    @if (bookingMessage()) { <p role="status" class="notice">{{ bookingMessage() }}</p> }
+  </section>
+}

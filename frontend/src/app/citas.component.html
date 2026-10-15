@@ -1,0 +1,58 @@
+<section class="panel">
+  <div class="row">
+    <h2>{{ api.isDoctor() ? 'Agenda del consultorio' : 'Mis citas' }}</h2>
+    <button type="button" class="secondary" (click)="load()">Actualizar</button>
+  </div>
+  @if (message()) { <p role="status" class="notice">{{ message() }}</p> }
+
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha y hora</th>
+        <th>{{ api.isDoctor() ? 'Paciente' : 'Profesional' }}</th>
+        <th>Motivo</th>
+        <th>Estado</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (a of appointments(); track a.id) {
+        <tr>
+          <td>{{ formatDateTime(a.dateTime) }}</td>
+          <td>{{ api.isDoctor() ? a.patientName : a.doctorName + ' · ' + a.specialty }}</td>
+          <td>{{ a.reason || '—' }}</td>
+          <td><span class="badge" [attr.data-status]="a.status">{{ a.status }}</span></td>
+          <td class="actions">
+            @if (canAttend(a)) {
+              <button type="button" (click)="attend(a)">Registrar consulta</button>
+            }
+          </td>
+        </tr>
+      } @empty {
+        <tr><td colspan="5">No hay citas.</td></tr>
+      }
+    </tbody>
+  </table>
+</section>
+
+@if (attending(); as a) {
+  <section class="panel">
+    <h2>Consulta de {{ a.patientName }}</h2>
+    <p class="muted">{{ formatDateTime(a.dateTime) }} · Requiere que el paciente te haya dado acceso a su expediente.</p>
+    <form class="stack" (ngSubmit)="saveConsultation()">
+      <label>Diagnóstico
+        <textarea name="diagnosis" [(ngModel)]="diagnosis" required minlength="3" rows="3"></textarea>
+      </label>
+      <label>Tratamiento e indicaciones
+        <textarea name="treatment" [(ngModel)]="treatment" required minlength="3" rows="3"></textarea>
+      </label>
+      <label>Notas (opcional)
+        <textarea name="notes" [(ngModel)]="notes" rows="2"></textarea>
+      </label>
+      <div class="row">
+        <button type="submit">Guardar consulta y generar receta</button>
+        <button type="button" class="secondary" (click)="attending.set(null)">Cancelar</button>
+      </div>
+    </form>
+  </section>
+}

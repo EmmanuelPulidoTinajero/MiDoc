@@ -12,3 +12,13 @@ button { border: 0; border-radius: .5rem; padding: .75rem 1rem; background: #246
 button:hover, button:focus-visible { background: #164a3d; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
 .card { background: #fff; border: 1px solid #dce5df; border-radius: 1rem; padding: 1.25rem; }
+.top { margin-bottom: .5rem; }
+.session { margin: 0; font-weight: 600; }
+/* Variantes de botón del encabezado y las pestañas (después de la regla button de arriba). */
+.tabs button { background: #e3eee8; color: #17352b; }
+.tabs button.active, .tabs button.active:hover { background: #246b59; color: #fff; }
+.tabs button:hover, .tabs button:focus-visible { background: #cfe1d7; }
+button.link { background: none; color: #246b59; padding: .25rem .5rem; text-decoration: underline; }
+button.link:hover, button.link:focus-visible { background: #e3eee8; }
+button.secondary { background: #e3eee8; color: #17352b; }
+button.secondary:hover, button.secondary:focus-visible { background: #cfe1d7; }

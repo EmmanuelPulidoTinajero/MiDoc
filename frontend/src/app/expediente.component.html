@@ -1,0 +1,73 @@
+<section class="panel">
+  <h2>Mi expediente médico</h2>
+  <p class="muted">Tu expediente es tuyo: solo lo ven los profesionales a los que les des acceso.</p>
+  <form class="grid-form" (ngSubmit)="save()">
+    <label>Fecha de nacimiento
+      <input type="date" name="birthDate" [(ngModel)]="form.birthDate">
+    </label>
+    <label>Sexo
+      <select name="sex" [(ngModel)]="form.sex">
+        <option value="">Sin especificar</option>
+        @for (s of sexes; track s) { <option [value]="s">{{ s }}</option> }
+      </select>
+    </label>
+    <label>Tipo de sangre
+      <select name="bloodType" [(ngModel)]="form.bloodType">
+        <option value="">Sin especificar</option>
+        @for (t of bloodTypes; track t) { <option [value]="t">{{ t }}</option> }
+      </select>
+    </label>
+    <label class="wide">Alergias (separadas por coma)
+      <input name="allergies" [(ngModel)]="form.allergies" placeholder="Penicilina, polen">
+    </label>
+    <label class="wide">Padecimientos crónicos (separados por coma)
+      <input name="chronicConditions" [(ngModel)]="form.chronicConditions" placeholder="Asma">
+    </label>
+    <label class="wide">Medicamentos actuales (separados por coma)
+      <input name="medications" [(ngModel)]="form.medications" placeholder="Salbutamol">
+    </label>
+    <label class="wide">Antecedentes y notas
+      <textarea name="notes" rows="3" [(ngModel)]="form.notes"></textarea>
+    </label>
+    <button type="submit">Guardar expediente</button>
+  </form>
+  @if (message()) { <p role="status" class="notice">{{ message() }}</p> }
+</section>
+
+<section class="panel">
+  <h2>¿Quién puede ver mi expediente?</h2>
+  <table>
+    <thead><tr><th>Profesional</th><th>Especialidad</th><th>Acceso</th><th>Actualizado</th><th></th></tr></thead>
+    <tbody>
+      @for (c of consents(); track c.doctorId) {
+        <tr>
+          <td>{{ c.doctorName }}</td>
+          <td>{{ c.specialty }}</td>
+          <td><span class="badge" [attr.data-status]="c.granted ? 'CONFIRMADA' : 'CANCELADA'">{{ c.granted ? 'Otorgado' : 'Revocado' }}</span></td>
+          <td>{{ formatDateTime(c.updatedAt) }}</td>
+          <td>
+            @if (c.granted) {
+              <button type="button" class="danger" (click)="setConsent(c.doctorId, false)">Revocar</button>
+            } @else {
+              <button type="button" class="secondary" (click)="setConsent(c.doctorId, true)">Otorgar</button>
+            }
+          </td>
+        </tr>
+      } @empty { <tr><td colspan="5">No has compartido tu expediente con nadie.</td></tr> }
+    </tbody>
+  </table>
+  <div class="grid-form">
+    <label>Dar acceso a
+      <select name="doctorToGrant" [(ngModel)]="doctorToGrant">
+        <option value="">Elige un profesional</option>
+        @for (d of doctors(); track d.id) { <option [value]="d.id">{{ d.name }} · {{ d.specialty }}</option> }
+      </select>
+    </label>
+    <button type="button" (click)="setConsent(doctorToGrant, true)">Otorgar acceso</button>
+  </div>
+  @if (consentMessage()) { <p role="status" class="notice">{{ consentMessage() }}</p> }
+</section>
+
+<section class="panel">
+  <midoc-expediente-vista [record]="record()" [showClinicalData]="false" />
+</section>
