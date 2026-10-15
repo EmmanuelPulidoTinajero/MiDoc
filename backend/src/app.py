@@ -2,12 +2,21 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+# Los módulos de la ampliación viven junto a este archivo (en Lambda, en local y en pruebas).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import flujos  # noqa: E402
+import reglas  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 def _load_jwt_secret() -> str:
@@ -75,6 +84,7 @@ def _database_connection():
                 "VALUES ('10000000-0000-0000-0000-000000000001', 'ACTIVA', 20, CURRENT_DATE, CURRENT_DATE + 30) "
                 "ON CONFLICT DO NOTHING"
             )
+            flujos.semilla_postgres(cursor)
         connection.commit()
         _DATABASE_INITIALIZED = True
     return connection
@@ -218,13 +228,37 @@ def _response(status: int, body: dict) -> dict:
             "content-type": "application/json; charset=utf-8",
             "access-control-allow-origin": "*",
             "access-control-allow-headers": "content-type, authorization",
-            "access-control-allow-methods": "GET,POST,OPTIONS",
+            "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
         },
         "body": json.dumps(body, ensure_ascii=False),
     }
 
 
+_APP = sys.modules[__name__]
+
+
 def handle(method: str, path: str, headers: dict | None = None, body: dict | None = None) -> dict:
+    """Convierte los errores de validación y de base de datos en respuestas JSON (400/404/409)
+    en lugar de un 500 sin cuerpo, para que el frontend pueda mostrar el mensaje."""
+    if body is not None and not isinstance(body, dict):
+        return _response(400, {"error": "El cuerpo de la petición debe ser un objeto JSON"})
+    try:
+        return _handle(method, path, headers, body)
+    except reglas.ErrorApi as error:
+        return _response(error.status, {"error": error.mensaje})
+    except Exception as error:
+        codigo = getattr(error, "pgcode", None)
+        if codigo in ("22P02", "22007", "22008"):
+            return _response(400, {"error": "Algún dato tiene un formato inválido"})
+        if codigo == "23503":
+            return _response(404, {"error": "Un registro relacionado no existe"})
+        if codigo == "23505":
+            return _response(409, {"error": "El registro ya existe"})
+        logger.exception("Error no controlado en %s %s", method, path)
+        return _response(500, {"error": "Error interno del servidor"})
+
+
+def _handle(method: str, path: str, headers: dict | None = None, body: dict | None = None) -> dict:
     headers = headers or {}
     body = body or {}
     parsed = urlparse(path)
@@ -235,11 +269,8 @@ def handle(method: str, path: str, headers: dict | None = None, body: dict | Non
     if method == "GET" and parsed.path == "/health":
         return _response(200, {"status": "ok", "service": "midoc-api"})
     if method == "GET" and parsed.path == "/api/doctors":
-        specialty = query.get("specialty", "").lower()
-        if _database_ready():
-            return _response(200, {"data": _db_doctors(specialty)})
-        doctors = [doctor for doctor in DB["doctors"] if not specialty or specialty in doctor["specialty"].lower()]
-        return _response(200, {"data": doctors})
+        # Filtros: specialty (original), location y q; solo doctores con suscripción vigente.
+        return flujos.buscar_doctores(_APP, query)
     if method == "POST" and parsed.path == "/api/auth/login":
         if _database_ready():
             user = _db_user(body.get("email", ""), body.get("password", "")) if _valid(body.get("password")) else None
@@ -251,6 +282,11 @@ def handle(method: str, path: str, headers: dict | None = None, body: dict | Non
             return _response(401, {"error": "Credenciales inválidas"})
         return _response(200, {"token": create_token(user), "user": {"id": user["id"], "email": user["email"], "role": user["role"]}})
 
+    # Registro, perfil de doctor y disponibilidad (no requieren sesión).
+    publica = flujos.atender_publico(_APP, method, parsed.path, query, body)
+    if publica is not None:
+        return publica
+
     user = authenticate(headers)
     if not user:
         return _response(401, {"error": "Autenticación requerida"})
@@ -260,31 +296,19 @@ def handle(method: str, path: str, headers: dict | None = None, body: dict | Non
             return _response(403, {"error": "Sólo un paciente puede agendar"})
         if not _valid(body.get("doctorId")) or not _valid(body.get("dateTime")):
             return _response(400, {"error": "doctorId y dateTime son requeridos"})
-        if _database_ready():
-            return _response(201, {"data": _db_appointment(user["sub"], body["doctorId"], body["dateTime"])})
-        appointment = {"id": f"a-{len(DB['appointments']) + 1}", "patientId": user["sub"], "doctorId": body["doctorId"], "dateTime": body["dateTime"], "status": "PENDIENTE"}
-        DB["appointments"].append(appointment)
-        return _response(201, {"data": appointment})
+        # Valida doctor con suscripción, fecha futura y que el horario esté libre.
+        return flujos.agendar_cita(_APP, user, body)
 
     if method == "GET" and parsed.path == "/api/appointments":
-        if _database_ready():
-            doctor_id = _db_doctor_id(user["sub"])
-            rows = _query(
-                "SELECT id::text, paciente_id::text, doctor_id::text, fecha_hora, estado FROM cita "
-                "WHERE paciente_id = %s OR doctor_id = %s ORDER BY fecha_hora",
-                (user["sub"], doctor_id),
-            )
-            data = [{"id": row[0], "patientId": row[1], "doctorId": row[2], "dateTime": row[3].isoformat(), "status": row[4]} for row in rows]
-            return _response(200, {"data": data})
-        doctor = next((item for item in DB["doctors"] if item["user_id"] == user["sub"]), None)
-        appointments = [item for item in DB["appointments"] if item["patientId"] == user["sub"] or (doctor and item["doctorId"] == doctor["id"])]
-        return _response(200, {"data": appointments})
+        # Mismos campos que antes más nombres del doctor/paciente; filtro opcional ?status=
+        return flujos.listar_citas(_APP, user, query)
 
     if method == "POST" and parsed.path == "/api/consents":
         if user["role"] != "PACIENTE":
             return _response(403, {"error": "Sólo el paciente administra consentimientos"})
         if not _valid(body.get("doctorId")) or not isinstance(body.get("granted"), bool):
             return _response(400, {"error": "doctorId y granted son requeridos"})
+        flujos.validar_doctor_para_consentimiento(_APP, body["doctorId"])
         if _database_ready():
             return _response(200, {"data": _db_consent(user["sub"], body["doctorId"], body["granted"])})
         consent = {"patientId": user["sub"], "doctorId": body["doctorId"], "granted": body["granted"], "updatedAt": datetime.now(timezone.utc).isoformat()}
@@ -293,51 +317,28 @@ def handle(method: str, path: str, headers: dict | None = None, body: dict | Non
         return _response(200, {"data": consent})
 
     if method == "GET" and parsed.path == "/api/records":
-        patient_id = user["sub"] if user["role"] == "PACIENTE" else query.get("patientId")
-        if _database_ready():
-            doctor_id = _db_doctor_id(user["sub"]) if user["role"] == "DOCTOR" else None
-            if not patient_id:
-                return _response(400, {"error": "patientId es requerido"})
-            if user["role"] != "PACIENTE" and not _db_has_consent(patient_id, doctor_id):
-                return _response(403, {"error": "El paciente no ha otorgado consentimiento"})
-            return _response(200, {"data": _db_record(patient_id, user["sub"])})
-        doctor = next((item for item in DB["doctors"] if item["user_id"] == user["sub"]), None)
-        allowed = user["role"] == "PACIENTE" or any(item["patientId"] == patient_id and item["doctorId"] == (doctor or {}).get("id") and item["granted"] for item in DB["consents"])
-        if not patient_id:
-            return _response(400, {"error": "patientId es requerido"})
-        if not allowed:
-            return _response(403, {"error": "El paciente no ha otorgado consentimiento"})
-        record = next((item for item in DB["records"] if item["patient_id"] == patient_id), {"patient_id": patient_id, "allergies": [], "notes": ""})
-        return _response(200, {"data": record})
+        # Mismos campos que antes (patient_id, allergies, notes) más datos clínicos,
+        # documentos e historial de consultas. El doctor necesita consentimiento y
+        # suscripción vigente; cada acceso queda en la bitácora.
+        return flujos.ver_expediente(_APP, user, query)
 
     if method == "POST" and parsed.path == "/api/consultations":
-        if user["role"] != "DOCTOR":
+        if user["role"] not in ("DOCTOR", "CLINICA"):
             return _response(403, {"error": "Sólo un doctor puede registrar consultas"})
         if not all(_valid(body.get(key)) for key in ("patientId", "appointmentId", "diagnosis")):
             return _response(400, {"error": "patientId, appointmentId y diagnosis son requeridos"})
-        if _database_ready():
-            doctor_id = _db_doctor_id(user["sub"])
-            if not _db_has_consent(body["patientId"], doctor_id):
-                return _response(403, {"error": "Se requiere consentimiento vigente"})
-            rows = _query(
-                "INSERT INTO consulta (cita_id, paciente_id, doctor_id, diagnostico, tratamiento) "
-                "VALUES (%s, %s, %s, %s, %s) RETURNING id::text",
-                (body["appointmentId"], body["patientId"], doctor_id, body["diagnosis"], body.get("treatment", "")),
-            )
-            return _response(201, {"data": {"id": rows[0][0], "appointmentId": body["appointmentId"], "diagnosis": body["diagnosis"], "treatment": body.get("treatment", "")}})
-        doctor = next(item for item in DB["doctors"] if item["user_id"] == user["sub"])
-        if not any(item["patientId"] == body["patientId"] and item["doctorId"] == doctor["id"] and item["granted"] for item in DB["consents"]):
-            return _response(403, {"error": "Se requiere consentimiento vigente"})
-        prescription = {"id": f"rx-{len(DB['prescriptions']) + 1}", "appointmentId": body["appointmentId"], "diagnosis": body["diagnosis"], "treatment": body.get("treatment", "")}
-        DB["prescriptions"].append(prescription)
-        return _response(201, {"data": prescription})
+        # Requiere suscripción y consentimiento; marca la cita COMPLETADA, crea la
+        # receta con su PDF en S3 y la consulta aparece en el historial del paciente.
+        return flujos.registrar_consulta(_APP, user, body)
 
     if method == "GET" and parsed.path == "/api/subscriptions":
-        if _database_ready():
-            doctor_id = _db_doctor_id(user["sub"])
-            rows = _query("SELECT doctor_id::text, estado, monto FROM suscripcion WHERE doctor_id = %s", (doctor_id,))
-            return _response(200, {"data": [{"doctor_id": row[0], "status": row[1], "amount": float(row[2])} for row in rows]})
-        doctor = next((item for item in DB["doctors"] if item["user_id"] == user["sub"]), None)
-        return _response(200, {"data": [item for item in DB["subscriptions"] if doctor and item["doctor_id"] == doctor["id"]]})
+        # Mismos campos que antes más vigencia (start, end, active) del periodo actual.
+        return flujos.ver_suscripcion(_APP, user)
+
+    # Rutas de la ampliación: expediente editable, documentos en S3, pago de la
+    # suscripción, horario del doctor, estado de citas, recetas, etc.
+    extra = flujos.atender_autenticado(_APP, user, method, parsed.path, query, body)
+    if extra is not None:
+        return extra
 
     return _response(404, {"error": "Ruta no encontrada"})

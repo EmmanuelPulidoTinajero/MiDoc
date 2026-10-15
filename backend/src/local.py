@@ -17,6 +17,8 @@ class Handler(BaseHTTPRequestHandler):
 
     do_GET = do_request
     do_POST = do_request
+    do_PUT = do_request
+    do_OPTIONS = do_request  # preflight de CORS del navegador
 
 
 if __name__ == "__main__":
