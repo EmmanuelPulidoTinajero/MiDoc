@@ -22,10 +22,12 @@
           <td>{{ api.isDoctor() ? a.patientName : a.doctorName + ' · ' + a.specialty }}</td>
           <td>{{ a.reason || '—' }}</td>
           <td><span class="badge" [attr.data-status]="a.status">{{ a.status }}</span></td>
-          <td class="actions">
-            @if (canAttend(a)) {
-              <button type="button" (click)="attend(a)">Registrar consulta</button>
-            }
+          <td>
+            <div class="actions">
+              @if (canAttend(a)) {
+                <button type="button" (click)="attend(a)">Registrar consulta</button>
+              }
+            </div>
           </td>
         </tr>
       } @empty {

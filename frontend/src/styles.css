@@ -32,7 +32,7 @@ button.link:hover, button.link:focus-visible { background: #e3eee8; }
 .history p { margin: .35rem 0; }
 table { width: 100%; border-collapse: collapse; margin-top: .75rem; }
 th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid #dce5df; vertical-align: top; }
-td.actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.actions { display: flex; flex-wrap: wrap; gap: .4rem; }
 .badge { display: inline-block; padding: .15rem .6rem; border-radius: 999px; font-size: .8rem; font-weight: 700; background: #e3eee8; }
 .badge[data-status="CONFIRMADA"] { background: #d5efe2; color: #1d5a46; }
 .badge[data-status="PENDIENTE"] { background: #fff1cc; color: #6b4d00; }
