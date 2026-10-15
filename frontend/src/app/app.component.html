@@ -1,0 +1,29 @@
+<main class="page">
+  <header>
+    <p class="eyebrow">MiDoc</p>
+    <h1>Encuentra atención médica y controla tu expediente.</h1>
+    <p>Demo del flujo de búsqueda y agenda. Los datos son ficticios.</p>
+  </header>
+
+  <section class="search" aria-labelledby="search-title">
+    <h2 id="search-title">Buscar profesionales</h2>
+    <form (ngSubmit)="search()">
+      <label for="specialty">Especialidad</label>
+      <input id="specialty" name="specialty" [(ngModel)]="specialty" placeholder="Ejemplo: medicina familiar">
+      <button type="submit">Buscar</button>
+    </form>
+    <p role="status">{{ message }}</p>
+  </section>
+
+  <section aria-labelledby="results-title">
+    <h2 id="results-title">Resultados</h2>
+    <div class="cards">
+      <article class="card" *ngFor="let doctor of doctors">
+        <h3>{{ doctor.name }}</h3>
+        <p>{{ doctor.specialty }} · {{ doctor.location }}</p>
+        <p>Consulta: ${{ doctor.price }} MXN</p>
+        <button type="button" (click)="book(doctor)">Agendar cita</button>
+      </article>
+    </div>
+  </section>
+</main>
