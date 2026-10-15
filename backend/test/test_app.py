@@ -1,6 +1,7 @@
 import json
 import sys
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -15,7 +16,14 @@ class AppTests(unittest.TestCase):
 
     def test_patient_can_book(self):
         login = json.loads(handle("POST", "/api/auth/login", body={"email": "paciente@midoc.local", "password": "paciente-demo"})["body"])
-        response = handle("POST", "/api/appointments", {"authorization": f"Bearer {login['token']}"}, {"doctorId": "d-1", "dateTime": "2026-10-20T10:00:00Z"})
+        # La cita debe caer en un horario libre del doctor: se toma el primero disponible
+        # de los próximos días en lugar de una fecha fija que con el tiempo queda en el pasado.
+        slot = next(
+            slots[0]
+            for days in range(1, 8)
+            if (slots := json.loads(handle("GET", f"/api/doctors/d-1/availability?date={date.today() + timedelta(days=days)}")["body"])["data"]["slots"])
+        )
+        response = handle("POST", "/api/appointments", {"authorization": f"Bearer {login['token']}"}, {"doctorId": "d-1", "dateTime": slot})
         self.assertEqual(response["statusCode"], 201)
 
     def test_records_require_authentication(self):
