@@ -1,5 +1,7 @@
 # Verificación real de fase dos
 
+> Estado posterior a las pruebas: el usuario solicitó retirar el entorno AWS el 16/10/2026. Código y evidencia publicados en el commit cc315ec; el estado operativo descrito abajo es histórico. Ver [CIERRE-AWS.md](CIERRE-AWS.md).
+
 Fecha: 16/10/2026. Entorno: us-east-1, AWS Academy Learner Lab. Sólo cuentas/datos sintéticos.
 
 ## Evidencia actual
@@ -20,4 +22,4 @@ El frontend se sirve por el endpoint REST HTTPS de S3. El endpoint antiguo websi
 
 Suscripciones sin cobros reales; sin correo/push; sin certificación WCAG manual completa. Las pruebas smoke generan datos E2E DEMO persistentes y eliminan objetos/insumos/promociones temporales. No se indujeron fallos de infraestructura en AWS. La reversión ante fallo de aviso se probó mediante regresiones locales del repositorio y de commit/rollback del adaptador SQL.
 
-El video queda pendiente por instrucción del usuario. Los recursos permanecen activos y consumen presupuesto. Ver [revisión integral](REVISION-INTEGRAL.md) para requisitos, correcciones y pendientes reales.
+El video queda pendiente por instrucción del usuario. El usuario solicitó el retiro del entorno después de conservar las evidencias; ver CIERRE-AWS.md. Ver [revisión integral](REVISION-INTEGRAL.md) para requisitos, correcciones y pendientes reales.

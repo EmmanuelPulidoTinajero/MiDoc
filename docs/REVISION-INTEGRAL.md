@@ -1,12 +1,14 @@
 # Revisión integral de MiDoc
 
+> Estado posterior a las pruebas: el usuario solicitó retirar el entorno AWS el 16/10/2026. Código y evidencia publicados en el commit cc315ec; el estado operativo descrito abajo es histórico. Ver [CIERRE-AWS.md](CIERRE-AWS.md).
+
 Fecha: 16 de octubre de 2026. Alcance: los tres PDF originales, código, frontend, persistencia, Terraform y pruebas reales en AWS Academy Learner Lab. El video permanece pendiente por instrucción del usuario.
 
 ## Dictamen y evidencia
 
 Los tres flujos centrales funcionan en AWS con PostgreSQL como fuente relacional y Lambda ejecutándose con el rol existente `LabRole`. Las correcciones de esta revisión están desplegadas. El frontend usa HTTPS sin necesitar CloudFront. Se completaron recordatorios automáticos con EventBridge y se observó una ejecución programada real en CloudWatch.
 
-No se declara cumplimiento total ni aprobación para uso clínico real. La suscripción es simulada; no hay correo/push, auditoría manual WCAG completa, CD ni monitoreo final. Los cambios están en el árbol de trabajo y en AWS, todavía sin commit/push. El video sigue pendiente.
+No se declara cumplimiento total ni aprobación para uso clínico real. La suscripción es simulada; no hay correo/push, auditoría manual WCAG completa, CD ni monitoreo final. Los cambios y las evidencias fueron publicados en GitHub (cc315ec). El video sigue pendiente.
 
 | Evidencia reproducible | Resultado |
 | --- | --- |
@@ -74,8 +76,8 @@ No se declara cumplimiento total ni aprobación para uso clínico real. La suscr
 4. Correo/push no implementado. Requiere identidad remitente o suscripciones confirmadas y verificación de permisos de envío. No publicar en RedshiftSNS ni enviar a direcciones de terceros.
 5. WCAG: axe y teclado básico no certifican conformidad. Falta lector de pantalla, revisión manual del foco/errores y zoom completo.
 6. Seguridad/operación: limitar login, rotación probada de JWT, certificados PostgreSQL verify-full, política de cuentas demo, paginación S3, validación real de contenido/antimalware, backup/restore y disponibilidad bajo carga.
-7. RDS no es Multi-AZ; skip_final_snapshot=true y estado Terraform local requieren protección. La sesión Learner Lab y el presupuesto limitan disponibilidad. Los recursos permanecen activos por instrucción de despliegue.
-8. CD y monitoreo completo corresponden a hitos posteriores. CI está configurado pero no se ejecutó remotamente porque no se hizo push.
+7. RDS no es Multi-AZ; skip_final_snapshot=true y estado Terraform local requieren protección. La sesión Learner Lab y el presupuesto limitan disponibilidad. El entorno se retiró por instrucción posterior del usuario; ver CIERRE-AWS.md.
+8. CD y monitoreo completo corresponden a hitos posteriores. CI está configurado y el push cc315ec fue publicado; su resultado remoto debe consultarse en GitHub Actions.
 
 Revocar consentimiento bloquea nuevas URLs/lecturas; una URL S3 ya firmada puede durar hasta 300 segundos. Es un límite que debe conservarse en la aceptación. La receta imprimible es de demostración, sin validación legal clínica.
 

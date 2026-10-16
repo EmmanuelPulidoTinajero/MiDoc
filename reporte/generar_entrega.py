@@ -20,7 +20,7 @@ a{color:#164a3d}li{margin-bottom:2mm}svg{width:100%;height:auto}small{font-size:
 
 PAGES = ["""
 <p class="meta">MiDoc · Proyecto Integrador · 16 de octubre de 2026 · 1/4</p>
-<h1>Marketplace de salud</h1><h2>Avance de fase dos</h2>
+<h1>Marketplace de salud</h1><h2>Avance de fase dos</h2><p><b>Estado posterior:</b> entorno AWS retirado por solicitud del usuario el 16/10/2026. Las pruebas descritas son evidencia histórica; el código quedó publicado en GitHub (cc315ec).</p>
 <p>MiDoc centraliza el expediente bajo control del paciente y ofrece a profesionales y centros médicos búsqueda, agenda y seguimiento. La nube permite compartir los servicios entre ubicaciones y mantener la persistencia sin un servidor local permanente.</p>
 <p><b>Repositorio:</b> <a href="https://github.com/EmmanuelPulidoTinajero/MiDoc">github.com/EmmanuelPulidoTinajero/MiDoc</a></p>
 <p class="pending"><b>Video:</b> pendiente por indicación del usuario. Este PDF es un borrador; no acredita una entrega final completa.</p>
@@ -52,7 +52,7 @@ PAGES = ["""
 <table><tr><th>Componente</th><th>Estado</th></tr>
 <tr><td>Frontend</td><td>Desplegado en endpoint REST S3 HTTPS con /index.html, sin CloudFront.</td></tr>
 <tr><td>Backend y datos</td><td>Lambda/API Gateway, RDS, Secrets Manager, DynamoDB y documentos S3 funcionan en AWS.</td></tr>
-<tr><td>Equipo local</td><td>Editor, compilación, pruebas y Terraform locales; correcciones desplegadas en AWS. Git sin commit/push.</td></tr>
+<tr><td>Equipo local</td><td>Editor, compilación, pruebas y Terraform locales; correcciones desplegadas en AWS. Git publicado (cc315ec); entorno retirado después de las pruebas.</td></tr>
 <tr><td>CI</td><td>Pruebas backend, build Angular y validate Terraform. Node 24 requerido por Angular 22. CD no configurado.</td></tr></table>
 <p><b>URLs de evidencia:</b><br><a href="https://4otc5sejki.execute-api.us-east-1.amazonaws.com/health">API: 4otc5sejki.execute-api.us-east-1.amazonaws.com/health</a><br><a href="https://midoc-frontend-647018795197.s3.us-east-1.amazonaws.com/index.html">Frontend HTTPS: midoc-frontend-647018795197.s3.us-east-1.amazonaws.com/index.html</a></p>
 <ul><li>Verificación real: API ok, web 200; Lambda Active/Successful; RDS 16.13 available, privado y cifrado.</li>
@@ -67,7 +67,7 @@ PAGES = ["""
 <p>Los componentes centrales están en AWS. No se afirma un porcentaje funcional exacto sin una matriz de aceptación y demo. Se conservan como pendientes explícitos:</p>
 <ol><li>Video parcial de máximo 10 minutos, pendiente por indicación del usuario.</li>
 <li>Correo/push y pagos reales no implementados; mantener simulaciones explícitas.</li>
-<li>Revisar/publicar cambios locales y alinear el código mostrado en GitHub con el despliegue.</li>
+<li>Redesplegar con Terraform para una nueva demostración; las URLs anteriores son históricas.</li>
 <li>Formalizar migraciones PostgreSQL, idempotencia del cliente y pruebas de recuperación/concurrencia.</li>
 <li>Completar revisión manual con lector de pantalla, foco y zoom; axe no certifica conformidad WCAG.</li></ol>
 <h3>Permisos: evidencia acotada</h3>
@@ -75,7 +75,7 @@ PAGES = ["""
 <h3>Simulaciones y próximos hitos</h3>
 <p>La suscripción valida una tarjeta de prueba y asigna vigencia; no cobra. Las promociones no aplican cargos automáticamente. Recordatorios automáticos en AWS; la bandeja se consulta al abrir MiDoc. CI/CD completo se prepara para la sesión del 12 de noviembre; cinco métricas, dos alertas y dashboard quedan para la fase final del Proyecto Integrador.</p>
 <table><tr><th>Integrante</th><th>Rol del Reporte 1</th></tr><tr><td>Emmanuel Pulido Tinajero</td><td>DevOps, infraestructura y soporte frontend/backend</td></tr><tr><td>David (Dakewer)</td><td>Frontend de pacientes y profesionales</td></tr><tr><td>Gilberto Anaya</td><td>Backend, expediente y lógica de negocio</td></tr></table>
-<p>El historial Git contiene participación de los tres integrantes. Los cambios nuevos siguen pendientes de commit/revisión.</p>
+<p>El historial Git contiene participación de los tres integrantes. Los cambios y las evidencias quedaron publicados en GitHub (cc315ec).</p>
 <p><b>Fuentes de alcance:</b> Reporte de fase 1 (pp. 1–2), Tarea 2 (pp. 1–6), Proyecto Integrador (p. 4 para fase dos y pp. 5–6 para hitos posteriores). Ver <code>docs/REVISION-INTEGRAL.md</code> para hallazgos y evidencia detallada.</p>
 """]
 

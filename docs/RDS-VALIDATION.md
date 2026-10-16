@@ -1,5 +1,7 @@
 # Validación RDS
 
+> Estado posterior a las pruebas: el usuario solicitó retirar el entorno AWS el 16/10/2026. Código y evidencia publicados en el commit cc315ec; el estado operativo descrito abajo es histórico. Ver [CIERRE-AWS.md](CIERRE-AWS.md).
+
 Fecha:16/10/2026. Fuente relacional: PostgreSQL16.13 en us-east-1, instancia midoc-20261016130331567100000009. Estado available, PubliclyAccessible=false, StorageEncrypted=true.
 
 Lambda midoc-api usa Python3.12, LabRole existente, VPC y credenciales administradas desde Secrets Manager. Su cliente exige sslmode=require. No se imprimieron secretos. RDS acepta5432 desde el security group de Lambda.

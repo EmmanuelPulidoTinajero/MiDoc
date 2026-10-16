@@ -2,6 +2,8 @@
 
 MiDoc es un marketplace de salud que conecta pacientes con profesionales y centros médicos. El paciente administra su expediente y autoriza quién puede consultarlo; los profesionales gestionan disponibilidad, citas, suscripción, pacientes, mensajes, inventario y promociones.
 
+> **Estado del entorno:** se solicitó y se está completando la destrucción de los recursos AWS de MiDoc el 16/10/2026. Las evidencias conservadas corresponden a las pruebas anteriores al retiro. Consulta [CIERRE-AWS.md](docs/CIERRE-AWS.md).
+
 ## Alcance de fase 2
 
 El MVP cubre los tres flujos end-to-end del proyecto integrador:
@@ -40,7 +42,7 @@ Tarea 2 no requiere SNS ni SES. En la sesión activa, SES responde `AccessDenied
 - La lectura de políticas IAM fue denegada. Por instrucción del usuario se conservan los roles existentes. EventBridge recibe únicamente un permiso de invocación sobre Lambda limitado a la regla MiDoc; no se modifica LabRole.
 - Los recursos del entorno son efímeros y la disponibilidad depende de que la sesión del laboratorio siga activa.
 
-**Demo activa:** [abrir MiDoc por HTTPS](https://midoc-frontend-647018795197.s3.us-east-1.amazonaws.com/index.html). Web, API y documentos usan HTTPS. Se conservan cuentas y datos ficticios; no hay aprobación para uso clínico real.
+**URL histórica del despliegue (retirado por solicitud del usuario):** [MiDoc por HTTPS](https://midoc-frontend-647018795197.s3.us-east-1.amazonaws.com/index.html). El código y las evidencias quedan publicados en GitHub; para abrir la aplicación se necesita desplegar nuevamente. El entorno probado utilizó HTTPS y datos ficticios.
 
 Verificación del 16/10/2026: 36 pruebas locales, tres flujos reales en AWS, seis recorridos en Edge y ocho vistas sin infracciones detectadas por axe. Los resultados y pendientes están en [la revisión integral](docs/REVISION-INTEGRAL.md).
 

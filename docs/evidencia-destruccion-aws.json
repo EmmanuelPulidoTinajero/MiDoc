@@ -1,0 +1,32 @@
+{
+  "verifiedAt": "2026-10-16T14:46:41.523842+00:00",
+  "account": "647018795197",
+  "region": "us-east-1",
+  "project": "midoc",
+  "result": "PENDING",
+  "remaining": {
+    "lambda": [],
+    "apiGateway": [],
+    "rds": [],
+    "snapshots": [],
+    "dynamodb": [],
+    "s3": [],
+    "secrets": [],
+    "logs": [],
+    "eventbridge": [],
+    "securityGroups": [
+      "sg-0cc5831717592d5d5"
+    ],
+    "vpcEndpoints": [],
+    "networkInterfaces": [
+      "eni-0f32fe5530ecb6079",
+      "eni-04a4b2526c34ab64b"
+    ]
+  },
+  "terraformManagedResources": [
+    "Estado no disponible; repetir al finalizar terraform apply"
+  ],
+  "preservedRole": "LabRole",
+  "scope": "Recursos MiDoc en us-east-1; se conservan LabRole, VPC/subnets predeterminadas y recursos ajenos.",
+  "note": "Los IDs de endpoints y security groups corresponden al despliegue validado del 16/10/2026."
+}

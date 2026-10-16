@@ -1,5 +1,7 @@
 # MiDoc — Reporte técnico de fase dos
 
+> Estado posterior a las pruebas: el usuario solicitó retirar el entorno AWS el 16/10/2026. Código y evidencia publicados en el commit cc315ec; el estado operativo descrito abajo es histórico. Ver [CIERRE-AWS.md](../docs/CIERRE-AWS.md).
+
 Fecha:16 de octubre de 2026. Entorno:AWS Academy Learner Lab, us-east-1. El documento de entrega de cuatro páginas es [ENTREGA-FASE2.pdf](ENTREGA-FASE2.pdf). El video permanece pendiente por instrucción del usuario. La matriz completa está en [REVISION-INTEGRAL.md](../docs/REVISION-INTEGRAL.md).
 
 ## Alcance y decisiones
@@ -52,9 +54,9 @@ Los scripts smoke son explícitos y reproducibles en backend/test. Crean cuentas
 
 El pago es una simulación y las promociones no canjean/cobran automáticamente. No hay email/push ni identidad remitente/suscripción confirmada; las denegaciones SES/CloudFront observadas sólo acreditan las consultas concretas, no una prohibición global. Los avisos programados se consultan al abrir MiDoc.
 
-Faltan migraciones versionadas y separación de credenciales de aplicación, idempotencia de cliente frente a pérdida de respuesta, restore/carga/concurrencia, TLS PostgreSQL verify-full, políticas de cuentas demo, antimalware/retención y auditoría manual con lector de pantalla. No es una aplicación aprobada para uso clínico real. La disponibilidad depende de sesión/presupuesto LearnerLab; recursos permanecen activos.
+Faltan migraciones versionadas y separación de credenciales de aplicación, idempotencia de cliente frente a pérdida de respuesta, restore/carga/concurrencia, TLS PostgreSQL verify-full, políticas de cuentas demo, antimalware/retención y auditoría manual con lector de pantalla. No es una aplicación aprobada para uso clínico real. La disponibilidad depende de sesión/presupuesto LearnerLab; el entorno de pruebas fue retirado posteriormente.
 
-CI prueba/compila/valida; no se ejecutó remotamente porque no se hizo push. CD y monitoreo final (cinco métricas, dos alarmas, dashboard) se mantienen para los hitos siguientes del Proyecto Integrador. Los cambios locales están desplegados pero pendientes de commit/push. El video sigue pendiente; no se declara entrega académica completa.
+CI prueba/compila/valida y se activa con el push publicado; consultar su resultado remoto en GitHub Actions. CD y monitoreo final (cinco métricas, dos alarmas, dashboard) se mantienen para los hitos siguientes del Proyecto Integrador. Los cambios quedaron publicados en GitHub (cc315ec); el despliegue fue retirado después de las pruebas. El video sigue pendiente; no se declara entrega académica completa.
 
 ## Equipo
 
