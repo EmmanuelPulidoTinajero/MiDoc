@@ -15,16 +15,14 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import flujos  # noqa: E402
 import reglas  # noqa: E402
+import servicios_aws  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 
 def _load_jwt_secret() -> str:
-    configured = os.environ.get("JWT_SECRET")
-    if configured:
-        return configured
     if os.environ.get("NODE_ENV") != "production":
-        return "local-development-only-change-me"
+        return os.environ.get("JWT_SECRET") or "local-development-only-change-me"
     secret_id = os.environ.get("SECRETS_MANAGER_SECRET_ID")
     if not secret_id:
         raise RuntimeError("SECRETS_MANAGER_SECRET_ID es obligatorio en producción")
@@ -57,10 +55,13 @@ def _database_connection():
         user=secret["username"],
         password=secret["password"],
         connect_timeout=5,
+        sslmode="require",
     )
     global _DATABASE_INITIALIZED
     if not _DATABASE_INITIALIZED:
         with connection.cursor() as cursor:
+            # Los arranques concurrentes no deben competir por DDL ni duplicar la semilla.
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtext('midoc-schema-init'))")
             schema = (Path(__file__).with_name("schema.sql")).read_text(encoding="utf-8")
             cursor.execute(schema)
             cursor.execute(
@@ -81,8 +82,9 @@ def _database_connection():
             )
             cursor.execute(
                 "INSERT INTO suscripcion (doctor_id, estado, monto, fecha_inicio, fecha_fin) "
-                "VALUES ('10000000-0000-0000-0000-000000000001', 'ACTIVA', 20, CURRENT_DATE, CURRENT_DATE + 30) "
-                "ON CONFLICT DO NOTHING"
+                "SELECT '10000000-0000-0000-0000-000000000001', 'ACTIVA', 20, CURRENT_DATE, CURRENT_DATE + 29 "
+                "WHERE NOT EXISTS (SELECT 1 FROM suscripcion "
+                "WHERE doctor_id = '10000000-0000-0000-0000-000000000001')"
             )
             flujos.semilla_postgres(cursor)
         connection.commit()
@@ -91,7 +93,15 @@ def _database_connection():
 
 
 def _database_ready() -> bool:
-    return os.environ.get("NODE_ENV") == "production" and bool(os.environ.get("DATABASE_SECRET_ARN"))
+    production = os.environ.get("NODE_ENV") == "production"
+    if production and not os.environ.get("DATABASE_SECRET_ARN"):
+        raise reglas.ErrorApi(503, "La base de datos de producción no está configurada")
+    return production
+
+
+def _audit_record_access(patient_id: str, actor_id: str) -> None:
+    """Escribe un evento complementario en DynamoDB; PostgreSQL conserva la bitácora transaccional."""
+    servicios_aws.registrar_acceso(patient_id, actor_id)
 
 
 def _query(sql: str, params: tuple = (), fetch: bool = True):
@@ -228,7 +238,7 @@ def _response(status: int, body: dict) -> dict:
             "content-type": "application/json; charset=utf-8",
             "access-control-allow-origin": "*",
             "access-control-allow-headers": "content-type, authorization",
-            "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
+            "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
         },
         "body": json.dumps(body, ensure_ascii=False),
     }
@@ -272,12 +282,14 @@ def _handle(method: str, path: str, headers: dict | None = None, body: dict | No
         # Filtros: specialty (original), location y q; solo doctores con suscripción vigente.
         return flujos.buscar_doctores(_APP, query)
     if method == "POST" and parsed.path == "/api/auth/login":
+        email = body.get("email")
+        email = email.strip().lower() if isinstance(email, str) else ""
         if _database_ready():
-            user = _db_user(body.get("email", ""), body.get("password", "")) if _valid(body.get("password")) else None
+            user = _db_user(email, body.get("password", "")) if _valid(body.get("password")) else None
             if not user:
                 return _response(401, {"error": "Credenciales inválidas"})
             return _response(200, {"token": create_token(user), "user": user})
-        user = next((item for item in DB["users"] if item["email"] == body.get("email") and _valid(body.get("password")) and verify_password(body["password"], item["password_hash"])), None)
+        user = next((item for item in DB["users"] if item["email"] == email and _valid(body.get("password")) and verify_password(body["password"], item["password_hash"])), None)
         if not user:
             return _response(401, {"error": "Credenciales inválidas"})
         return _response(200, {"token": create_token(user), "user": {"id": user["id"], "email": user["email"], "role": user["role"]}})
@@ -303,6 +315,18 @@ def _handle(method: str, path: str, headers: dict | None = None, body: dict | No
         # Mismos campos que antes más nombres del doctor/paciente; filtro opcional ?status=
         return flujos.listar_citas(_APP, user, query)
 
+    if method == "PUT" and parsed.path.startswith("/api/appointments/") and parsed.path.endswith("/reschedule"):
+        appointment_id = parsed.path.removeprefix("/api/appointments/").removesuffix("/reschedule").strip("/")
+        if not appointment_id or "/" in appointment_id or not _valid(body.get("dateTime")):
+            return _response(400, {"error": "appointmentId y dateTime válidos son requeridos"})
+        return flujos.reprogramar_cita(_APP, user, appointment_id, body)
+
+    if method == "PUT" and parsed.path.startswith("/api/appointments/") and parsed.path.endswith("/status"):
+        appointment_id = parsed.path.removeprefix("/api/appointments/").removesuffix("/status").strip("/")
+        if not appointment_id or "/" in appointment_id:
+            return _response(404, {"error": "Ruta no encontrada"})
+        return flujos.actualizar_estado_cita(_APP, user, appointment_id, body)
+
     if method == "POST" and parsed.path == "/api/consents":
         if user["role"] != "PACIENTE":
             return _response(403, {"error": "Sólo el paciente administra consentimientos"})
@@ -321,6 +345,12 @@ def _handle(method: str, path: str, headers: dict | None = None, body: dict | No
         # documentos e historial de consultas. El doctor necesita consentimiento y
         # suscripción vigente; cada acceso queda en la bitácora.
         return flujos.ver_expediente(_APP, user, query)
+
+    if method == "GET" and parsed.path.startswith("/api/prescriptions/"):
+        prescription_id = parsed.path.removeprefix("/api/prescriptions/").strip("/")
+        if not prescription_id or "/" in prescription_id:
+            return _response(404, {"error": "Ruta no encontrada"})
+        return flujos.ver_receta(_APP, user, prescription_id)
 
     if method == "POST" and parsed.path == "/api/consultations":
         if user["role"] not in ("DOCTOR", "CLINICA"):

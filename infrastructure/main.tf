@@ -29,6 +29,10 @@ data "aws_subnets" "default" {
   }
 }
 
+data "aws_route_tables" "default" {
+  vpc_id = local.vpc_id
+}
+
 locals {
   vpc_id            = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.default.id
   lambda_subnet_ids = length(var.lambda_subnet_ids) > 0 ? var.lambda_subnet_ids : slice(data.aws_subnets.default.ids, 0, 2)
@@ -83,6 +87,20 @@ resource "aws_vpc_endpoint" "secretsmanager" {
   subnet_ids          = local.lambda_subnet_ids
   security_group_ids  = [aws_security_group.lambda.id]
   private_dns_enabled = true
+}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = local.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = data.aws_route_tables.default.ids
+}
+
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = local.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = data.aws_route_tables.default.ids
 }
 
 resource "aws_db_instance" "postgres" {
@@ -162,6 +180,25 @@ resource "terraform_data" "frontend_bucket" {
   }
 }
 
+resource "terraform_data" "medical_documents_bucket" {
+  input = {
+    bucket = "${var.project_name}-documents-${data.aws_caller_identity.current.account_id}"
+    region = var.aws_region
+  }
+  triggers_replace = [var.project_name, data.aws_caller_identity.current.account_id,
+  filemd5("${path.module}/s3_medical.py")]
+
+  provisioner "local-exec" {
+    command     = "python s3_medical.py"
+    working_dir = path.module
+    environment = {
+      AWS_REGION             = var.aws_region
+      MIDOC_DOCUMENTS_BUCKET = "${var.project_name}-documents-${data.aws_caller_identity.current.account_id}"
+      MIDOC_FRONTEND_BUCKET  = terraform_data.frontend_bucket.input.bucket
+    }
+  }
+}
+
 output "database_endpoint" {
   value = var.enable_rds ? aws_db_instance.postgres[0].address : null
 }
@@ -171,5 +208,8 @@ output "frontend_bucket_name" {
   value = var.frontend_bucket_name != "" ? var.frontend_bucket_name : "${var.project_name}-frontend-${data.aws_caller_identity.current.account_id}"
 }
 output "frontend_url" {
-  value = "http://${var.frontend_bucket_name != "" ? var.frontend_bucket_name : "${var.project_name}-frontend-${data.aws_caller_identity.current.account_id}"}.s3-website-${var.aws_region}.amazonaws.com"
+  value = "https://${terraform_data.frontend_bucket.input.bucket}.s3.${var.aws_region}.amazonaws.com/index.html"
+}
+output "medical_documents_bucket" {
+  value = terraform_data.medical_documents_bucket.input.bucket
 }

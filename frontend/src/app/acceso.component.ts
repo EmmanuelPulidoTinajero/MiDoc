@@ -18,7 +18,7 @@ import { ApiService, Role, errorMessage } from './api.service';
         <form class="grid-form" (ngSubmit)="login()">
           <label>Correo <input type="email" name="email" [(ngModel)]="email" required autocomplete="username"></label>
           <label>Contraseña <input type="password" name="password" [(ngModel)]="password" required autocomplete="current-password"></label>
-          <button type="submit">Entrar</button>
+          <button type="submit" [disabled]="submitting()">{{ submitting() ? 'Validando…' : 'Entrar' }}</button>
         </form>
         <p class="muted">Cuentas de demostración: paciente&#64;midoc.local / paciente-demo · doctor&#64;midoc.local / doctor-demo</p>
       } @else {
@@ -27,7 +27,7 @@ import { ApiService, Role, errorMessage } from './api.service';
             <select name="role" [(ngModel)]="role">
               <option value="PACIENTE">Paciente (gratis)</option>
               <option value="DOCTOR">Doctor(a) independiente</option>
-              <option value="CLINICA">Consultorio o clínica</option>
+              <option value="CLINICA">Consultorio, clínica u hospital</option>
             </select>
           </label>
           <label>Nombre completo <input name="name" [(ngModel)]="name" required></label>
@@ -42,7 +42,7 @@ import { ApiService, Role, errorMessage } from './api.service';
             <label>Ciudad <input name="city" [(ngModel)]="city"></label>
             <label>Precio de consulta (MXN) <input type="number" name="price" min="0" [(ngModel)]="price"></label>
           }
-          <button type="submit">Crear cuenta</button>
+          <button type="submit" [disabled]="submitting()">{{ submitting() ? 'Creando cuenta…' : 'Crear cuenta' }}</button>
         </form>
         @if (role !== 'PACIENTE') {
           <p class="muted">Después de registrarte, paga tu suscripción de $20 USD/mes y publica tu horario en "Mi panel".</p>
@@ -57,6 +57,7 @@ export class AccesoComponent {
   readonly done = output<void>();
   readonly mode = signal<'login' | 'register'>('login');
   readonly message = signal('');
+  readonly submitting = signal(false);
 
   email = '';
   password = '';
@@ -69,15 +70,21 @@ export class AccesoComponent {
   price = 500;
 
   async login(): Promise<void> {
+    if (this.submitting()) return;
+    this.submitting.set(true);
     try {
       await this.api.login(this.email, this.password);
       this.done.emit();
     } catch (error) {
       this.message.set(errorMessage(error));
+    } finally {
+      this.submitting.set(false);
     }
   }
 
   async register(): Promise<void> {
+    if (this.submitting()) return;
+    this.submitting.set(true);
     const body: Record<string, unknown> = {
       email: this.email, password: this.password, role: this.role, name: this.name, phone: this.phone || undefined
     };
@@ -89,6 +96,8 @@ export class AccesoComponent {
       this.done.emit();
     } catch (error) {
       this.message.set(errorMessage(error));
+    } finally {
+      this.submitting.set(false);
     }
   }
 }

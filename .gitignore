@@ -15,3 +15,5 @@ terraform.tfstate.*
 __pycache__/
 *.pyc
 backend/lambda.zip
+backend/lambda-package.zip
+backend/.lambda-build/

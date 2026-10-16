@@ -1,0 +1,57 @@
+{
+  "testedAt": "2026-10-16T14:35:18.113499+00:00",
+  "url": "https://midoc-frontend-647018795197.s3.us-east-1.amazonaws.com/index.html",
+  "browser": "Microsoft Edge headless / Playwright",
+  "checks": [
+    "Registro de paciente desde interfaz",
+    "Búsqueda, perfil y cita desde interfaz",
+    "Reprogramación con confirmación visible tras cerrar formulario",
+    "Cancelación y actualización de estado",
+    "Expediente, otorgar/revocar y carga/eliminación DICOM por HTTPS con CORS",
+    "Sesión profesional, panel y diseño móvil"
+  ],
+  "pageErrors": [],
+  "accessibility": [
+    {
+      "view": "buscar-desktop",
+      "violations": [],
+      "passes": 23
+    },
+    {
+      "view": "registro",
+      "violations": [],
+      "passes": 24
+    },
+    {
+      "view": "mis-citas",
+      "violations": [],
+      "passes": 22
+    },
+    {
+      "view": "expediente-desktop",
+      "violations": [],
+      "passes": 28
+    },
+    {
+      "view": "expediente-mobile",
+      "violations": [],
+      "passes": 29
+    },
+    {
+      "view": "expediente-320px",
+      "violations": [],
+      "passes": 29
+    },
+    {
+      "view": "mensajes-mobile",
+      "violations": [],
+      "passes": 23
+    },
+    {
+      "view": "panel-doctor-mobile",
+      "violations": [],
+      "passes": 27
+    }
+  ],
+  "limitations": "axe y teclado básico no sustituyen lector de pantalla ni auditoría WCAG manual completa"
+}

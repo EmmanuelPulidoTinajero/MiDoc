@@ -1,3 +1,9 @@
+@if (loading()) {
+  <section class="panel" role="status" aria-live="polite">Cargando tu expediente…</section>
+} @else if (!record()) {
+  <section class="panel"><p role="alert">{{ message() || 'No pudimos cargar tu expediente.' }}</p>
+    <button type="button" (click)="load()">Intentar de nuevo</button></section>
+} @else {
 <section class="panel">
   <h2>Mi expediente médico</h2>
   <p class="muted">Tu expediente es tuyo: solo lo ven los profesionales a los que les des acceso.</p>
@@ -29,15 +35,33 @@
     <label class="wide">Antecedentes y notas
       <textarea name="notes" rows="3" [(ngModel)]="form.notes"></textarea>
     </label>
-    <button type="submit">Guardar expediente</button>
+    <button type="submit" [disabled]="saving()">{{ saving() ? 'Guardando…' : 'Guardar expediente' }}</button>
   </form>
   @if (message()) { <p role="status" class="notice">{{ message() }}</p> }
 </section>
 
+<section class="panel" aria-labelledby="documents-title">
+  <h2 id="documents-title">Estudios y documentos</h2>
+  <p class="muted">Archivos privados disponibles sólo para ti y los profesionales con acceso autorizado. PDF, JPG, PNG o DICOM; máximo 10 MB.</p>
+  <label>Agregar archivo clínico
+    <input type="file" accept="application/pdf,image/jpeg,image/png,application/dicom,.dcm,.dicom" [disabled]="uploading()" (change)="uploadDocument($event)">
+  </label>
+  @if (uploading()) { <p role="status" class="notice">Guardando archivo de forma segura…</p> }
+  <ul class="compact">
+    @for (document of documents(); track document.id) {
+      <li><a [href]="document.downloadUrl" target="_blank" rel="noopener">{{ document.name }}</a>
+        <span class="muted"> · {{ formatSize(document.size) }}</span>
+        <button type="button" class="link danger-text" [disabled]="deletingDocumentId() === document.id" (click)="deleteDocument(document)">{{ deletingDocumentId() === document.id ? 'Eliminando…' : 'Eliminar' }}</button></li>
+    } @empty { <li>No hay documentos clínicos adjuntos.</li> }
+  </ul>
+</section>
+
 <section class="panel">
   <h2>¿Quién puede ver mi expediente?</h2>
+  <div class="table-scroll" role="region" aria-label="Permisos para consultar tu expediente" tabindex="0">
   <table>
-    <thead><tr><th>Profesional</th><th>Especialidad</th><th>Acceso</th><th>Actualizado</th><th></th></tr></thead>
+    <caption class="sr-only">Profesionales y permisos de acceso a tu expediente</caption>
+    <thead><tr><th scope="col">Profesional</th><th scope="col">Especialidad</th><th scope="col">Acceso</th><th scope="col">Actualizado</th><th scope="col">Acción</th></tr></thead>
     <tbody>
       @for (c of consents(); track c.doctorId) {
         <tr>
@@ -47,15 +71,16 @@
           <td>{{ formatDateTime(c.updatedAt) }}</td>
           <td>
             @if (c.granted) {
-              <button type="button" class="danger" (click)="setConsent(c.doctorId, false)">Revocar</button>
+              <button type="button" class="danger" [disabled]="updatingConsentId() === c.doctorId" (click)="setConsent(c.doctorId, false)">{{ updatingConsentId() === c.doctorId ? 'Actualizando…' : 'Revocar' }}</button>
             } @else {
-              <button type="button" class="secondary" (click)="setConsent(c.doctorId, true)">Otorgar</button>
+              <button type="button" class="secondary" [disabled]="updatingConsentId() === c.doctorId" (click)="setConsent(c.doctorId, true)">{{ updatingConsentId() === c.doctorId ? 'Actualizando…' : 'Otorgar' }}</button>
             }
           </td>
         </tr>
       } @empty { <tr><td colspan="5">No has compartido tu expediente con nadie.</td></tr> }
     </tbody>
   </table>
+  </div>
   <div class="grid-form">
     <label>Dar acceso a
       <select name="doctorToGrant" [(ngModel)]="doctorToGrant">
@@ -63,11 +88,12 @@
         @for (d of doctors(); track d.id) { <option [value]="d.id">{{ d.name }} · {{ d.specialty }}</option> }
       </select>
     </label>
-    <button type="button" (click)="setConsent(doctorToGrant, true)">Otorgar acceso</button>
+    <button type="button" [disabled]="!doctorToGrant || !!updatingConsentId()" (click)="setConsent(doctorToGrant, true)">Otorgar acceso</button>
   </div>
   @if (consentMessage()) { <p role="status" class="notice">{{ consentMessage() }}</p> }
 </section>
 
 <section class="panel">
-  <midoc-expediente-vista [record]="record()" [showClinicalData]="false" />
+  <midoc-expediente-vista [record]="record()" [documents]="documents()" [showClinicalData]="false" />
 </section>
+}

@@ -1,15 +1,24 @@
 data "archive_file" "backend" {
   type        = "zip"
-  source_dir  = "${path.module}/../backend/src"
-  output_path = "${path.module}/../backend/lambda.zip"
-  excludes    = ["**/__pycache__/**", "**/*.pyc"]
+  source_dir  = "${path.module}/../backend/.lambda-build"
+  output_path = "${path.module}/../backend/lambda-package.zip"
+  depends_on  = [terraform_data.lambda_dependencies]
 }
 
 resource "terraform_data" "lambda_dependencies" {
-  triggers_replace = [filemd5("${path.module}/../backend/requirements.txt")]
+  triggers_replace = [
+    filemd5("${path.module}/../backend/requirements.txt"),
+    filemd5("${path.module}/build_lambda.py"),
+    filemd5("${path.module}/../backend/src/app.py"),
+    filemd5("${path.module}/../backend/src/flujos.py"),
+    filemd5("${path.module}/../backend/src/reglas.py"),
+    filemd5("${path.module}/../backend/src/servicios_aws.py"),
+    filemd5("${path.module}/../backend/src/lambda_function.py"),
+    filemd5("${path.module}/../backend/src/schema.sql"),
+  ]
 
   provisioner "local-exec" {
-    command     = "python -m pip install --platform manylinux2014_x86_64 --implementation cp --python-version 312 --only-binary=:all: --upgrade -r ../backend/requirements.txt -t ../backend/src"
+    command     = "python build_lambda.py"
     working_dir = path.module
   }
 }
@@ -19,7 +28,6 @@ data "aws_iam_role" "lambda" {
 }
 
 resource "aws_lambda_function" "api" {
-  depends_on       = [terraform_data.lambda_dependencies]
   function_name    = "${var.project_name}-api"
   role             = data.aws_iam_role.lambda.arn
   runtime          = "python3.12"
@@ -33,6 +41,7 @@ resource "aws_lambda_function" "api" {
       NODE_ENV                  = "production"
       SECRETS_MANAGER_SECRET_ID = aws_secretsmanager_secret.application.id
       DYNAMODB_TABLE_NAME       = aws_dynamodb_table.application_events.name
+      MEDICAL_DOCUMENTS_BUCKET  = terraform_data.medical_documents_bucket.input.bucket
       DATABASE_SECRET_ARN       = var.enable_rds ? aws_db_instance.postgres[0].master_user_secret[0].secret_arn : ""
       DATABASE_NAME             = var.enable_rds ? aws_db_instance.postgres[0].db_name : ""
       DATABASE_HOST             = var.enable_rds ? aws_db_instance.postgres[0].address : ""
@@ -45,6 +54,8 @@ resource "aws_lambda_function" "api" {
       security_group_ids = [aws_security_group.lambda.id]
     }
   }
+  depends_on = [terraform_data.lambda_dependencies, terraform_data.medical_documents_bucket,
+  aws_vpc_endpoint.s3, aws_vpc_endpoint.dynamodb]
 }
 
 resource "aws_apigatewayv2_api" "http" {

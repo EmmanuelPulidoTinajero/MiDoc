@@ -9,10 +9,16 @@ abajo no saben en qué modo están.
 app.py pasa su propio módulo como `app` para evitar importaciones circulares.
 """
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
+from functools import wraps
+from threading import RLock
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 import reglas
+import servicios_aws
 from reglas import ErrorApi, ZONA
 
 HORARIO_DEMO = [
@@ -20,6 +26,29 @@ HORARIO_DEMO = [
 ] + [
     {"dia_semana": dia, "hora_inicio": time(16, 0), "hora_fin": time(19, 0)} for dia in range(1, 6)
 ]
+
+_repositorio_actual = ContextVar("midoc_repositorio", default=None)
+_bloqueo_memoria = RLock()
+
+
+def transaccional(funcion):
+    """La operación de negocio y sus notificaciones se confirman juntas."""
+    @wraps(funcion)
+    def ejecutar(app, usuario, *args, **kwargs):
+        # Las lecturas y las operaciones de objetos S3 no participan en una
+        # transacción PostgreSQL; los objetos tienen su propio ciclo de vida.
+        if funcion.__name__ == "atender_autenticado" and (
+            args[0] == "GET" or args[1].startswith("/api/records/documents")
+        ):
+            return funcion(app, usuario, *args, **kwargs)
+        repo = repositorio(app)
+        token = _repositorio_actual.set(repo)
+        try:
+            with repo.atomic(usuario["sub"]):
+                return funcion(app, usuario, *args, **kwargs)
+        finally:
+            _repositorio_actual.reset(token)
+    return ejecutar
 
 
 # ===========================================================================
@@ -32,6 +61,17 @@ class RepoMemoria:
     def __init__(self, app):
         self.db = app.DB
         self._preparar()
+
+    @contextmanager
+    def atomic(self, actor_id):
+        with _bloqueo_memoria:
+            anterior = deepcopy(self.db)
+            try:
+                yield
+            except Exception:
+                self.db.clear()
+                self.db.update(anterior)
+                raise
 
     def _preparar(self):
         """Completa los datos de demo de app.DB con los campos nuevos (idempotente)."""
@@ -49,6 +89,10 @@ class RepoMemoria:
             suscripcion.setdefault("start", reglas.hoy())
             suscripcion.setdefault("end", reglas.hoy() + timedelta(days=reglas.DIAS_SUSCRIPCION - 1))
         db.setdefault("access_log", [])
+        db.setdefault("inventory", [])
+        db.setdefault("promotions", [])
+        db.setdefault("notifications", [])
+        db.setdefault("messages", [])
 
     # -- usuarios -----------------------------------------------------------
     def _usuario(self, usuario):
@@ -90,6 +134,10 @@ class RepoMemoria:
         doctor = next((d for d in self.db["doctors"] if d["id"] == doctor_id), None)
         return self._doctor(doctor) if doctor else None
 
+    def user_id_de_doctor(self, doctor_id):
+        doctor = next((d for d in self.db["doctors"] if d["id"] == doctor_id), None)
+        return doctor["user_id"] if doctor else None
+
     def doctor_id_de_usuario(self, usuario_id):
         doctor = next((d for d in self.db["doctors"] if d["user_id"] == usuario_id), None)
         return doctor["id"] if doctor else None
@@ -118,13 +166,111 @@ class RepoMemoria:
         bloques = self.db["schedules"].get(doctor_id, [])
         return [dict(b) for b in sorted(bloques, key=lambda b: (b["dia_semana"], b["hora_inicio"]))]
 
+    def promociones(self, doctor_id, referencia=None, solo_activas=False):
+        referencia = referencia or reglas.hoy()
+        return [dict(p) for p in self.db["promotions"] if p["doctorId"] == doctor_id
+                and (not solo_activas or p["active"] and p["start"] <= referencia <= p["end"])]
+
+    def inventario(self, doctor_id):
+        return [dict(item) for item in self.db["inventory"] if item["doctorId"] == doctor_id]
+
+    def guardar_insumo(self, doctor_id, item):
+        existente = next((i for i in self.db["inventory"] if i["doctorId"] == doctor_id
+                          and i["name"].casefold() == item["name"].casefold()), None)
+        if existente:
+            existente.update(item)
+            return dict(existente)
+        resultado = {"id": f"inv-{uuid.uuid4().hex[:8]}", "doctorId": doctor_id, **item}
+        self.db["inventory"].append(resultado)
+        return dict(resultado)
+
+    def eliminar_insumo(self, doctor_id, item_id):
+        antes = len(self.db["inventory"])
+        self.db["inventory"] = [i for i in self.db["inventory"]
+                                if not (i["doctorId"] == doctor_id and i["id"] == item_id)]
+        return len(self.db["inventory"]) < antes
+
+    def guardar_promocion(self, doctor_id, promo):
+        resultado = {"id": f"promo-{uuid.uuid4().hex[:8]}", "doctorId": doctor_id, **promo, "active": True}
+        self.db["promotions"].append(resultado)
+        return dict(resultado)
+
+    def eliminar_promocion(self, doctor_id, promo_id):
+        antes = len(self.db["promotions"])
+        self.db["promotions"] = [p for p in self.db["promotions"]
+                                 if not (p["doctorId"] == doctor_id and p["id"] == promo_id)]
+        return len(self.db["promotions"]) < antes
+
+    def notificar(self, user_id, kind, title, message, reference=None):
+        notification = {"id": f"n-{uuid.uuid4().hex[:8]}", "type": kind, "title": title,
+                        "message": message, "reference": reference, "createdAt": reglas.ahora().isoformat(),
+                        "read": False}
+        self.db["notifications"].append({"userId": user_id, **notification})
+        return notification
+
+    def notificaciones(self, user_id):
+        return [dict(n) for n in reversed(self.db["notifications"]) if n["userId"] == user_id]
+
+    def marcar_notificacion(self, user_id, notification_id):
+        item = next((n for n in self.db["notifications"] if n["userId"] == user_id
+                     and n["id"] == notification_id), None)
+        if item:
+            item["read"] = True
+        return dict(item) if item else None
+
+    def puede_mensajear(self, user_a, user_b):
+        profile = next((d for d in self.db["doctors"] if d["user_id"] in (user_a, user_b)), None)
+        patient_id = user_b if profile and profile["user_id"] == user_a else user_a
+        doctor_user_id = profile["user_id"] if profile else None
+        if not profile or patient_id == doctor_user_id:
+            return False
+        consent = any(c["patientId"] == patient_id and c["doctorId"] == profile["id"] and c["granted"]
+                      for c in self.db["consents"])
+        appointment = any(c["patientId"] == patient_id and c["doctorId"] == profile["id"]
+                          for c in self.db["appointments"])
+        return consent or appointment
+
+    def mensajes(self, user_id, other_id):
+        result = []
+        for message in self.db["messages"]:
+            if {message["senderId"], message["recipientId"]} == {user_id, other_id}:
+                message["read"] = message["recipientId"] == user_id and bool(message.get("readAt"))
+                result.append(dict(message))
+        result.sort(key=lambda item: item["createdAt"])
+        for message in result:
+            if message["recipientId"] == user_id:
+                stored = next(m for m in self.db["messages"] if m["id"] == message["id"])
+                stored["readAt"] = reglas.ahora().isoformat()
+                message["read"] = True
+        return result
+
+    def conversaciones(self, user_id):
+        others = {m["recipientId"] if m["senderId"] == user_id else m["senderId"]
+                  for m in self.db["messages"] if user_id in (m["senderId"], m["recipientId"])}
+        result = []
+        for other_id in others:
+            usuario = self.usuario(other_id) or {}
+            mensajes = [m for m in self.db["messages"]
+                        if {m["senderId"], m["recipientId"]} == {user_id, other_id}]
+            ultimo = max(mensajes, key=lambda item: item["createdAt"])
+            result.append({"userId": other_id, "name": usuario.get("name") or usuario.get("email"),
+                           "lastMessage": ultimo["content"], "updatedAt": ultimo["createdAt"],
+                           "unread": sum(1 for m in mensajes if m["recipientId"] == user_id and not m.get("readAt"))})
+        return sorted(result, key=lambda item: item["updatedAt"], reverse=True)
+
+    def enviar_mensaje(self, sender_id, recipient_id, content):
+        message = {"id": f"msg-{uuid.uuid4().hex[:8]}", "senderId": sender_id, "recipientId": recipient_id,
+                   "content": content, "createdAt": reglas.ahora().isoformat(), "read": False}
+        self.db["messages"].append(message)
+        return dict(message)
+
     def reemplazar_horario(self, doctor_id, bloques):
         self.db["schedules"][doctor_id] = [dict(b) for b in bloques]
 
-    def ocupados(self, doctor_id, dia):
+    def ocupados(self, doctor_id, dia, excluir_id=None):
         return [
             self._fecha(c["dateTime"]) for c in self.db["appointments"]
-            if c["doctorId"] == doctor_id and c["status"] != "CANCELADA"
+            if c["doctorId"] == doctor_id and c["id"] != excluir_id and c["status"] != "CANCELADA"
             and self._fecha(c["dateTime"]).date() == dia
         ]
 
@@ -158,6 +304,29 @@ class RepoMemoria:
         citas = [self._cita(c) for c in self.db["appointments"]
                  if c["patientId"] == usuario_id or (doctor_id and c["doctorId"] == doctor_id)]
         return sorted(citas, key=lambda c: c["dateTime"])
+
+    def cambiar_estado_cita(self, cita_id, estado_actual, estado_nuevo):
+        cita = next((c for c in self.db["appointments"] if c["id"] == cita_id), None)
+        if not cita or cita["status"] != estado_actual:
+            return False
+        cita["status"] = estado_nuevo
+        return True
+
+    def reprogramar_cita(self, cita_id, fecha_hora):
+        cita = next((c for c in self.db["appointments"] if c["id"] == cita_id), None)
+        if not cita:
+            return False
+        cita["dateTime"] = fecha_hora.isoformat()
+        return True
+
+    def receta(self, receta_id):
+        receta = next((r for r in self.db["prescriptions"] if r["id"] == receta_id), None)
+        if not receta:
+            return None
+        cita = self.cita(receta["appointmentId"]) or {}
+        doctor = self.doctor(receta["doctorId"]) or {}
+        return {**receta, "dateTime": cita.get("dateTime"), "doctorName": doctor.get("name"),
+                "specialty": doctor.get("specialty")}
 
     # -- expediente ---------------------------------------------------------
     def expediente(self, paciente_id):
@@ -270,7 +439,30 @@ class RepoPostgres:
 
     def __init__(self, app):
         self.app = app
-        self.q = app._query
+        self.conexion = None
+
+    @contextmanager
+    def atomic(self, actor_id):
+        conexion = self.app._database_connection()
+        self.conexion = conexion
+        try:
+            with conexion.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (actor_id,))
+            yield
+            conexion.commit()
+        except Exception:
+            conexion.rollback()
+            raise
+        finally:
+            self.conexion = None
+            conexion.close()
+
+    def q(self, sql, params=(), fetch=True):
+        if self.conexion is None:
+            return self.app._query(sql, params, fetch=fetch)
+        with self.conexion.cursor() as cursor:
+            cursor.execute(sql, params)
+            return cursor.fetchall() if fetch and cursor.description else None
 
     def _uno(self, sql, params=()):
         filas = self.q(sql, params)
@@ -278,6 +470,9 @@ class RepoPostgres:
 
     def _transaccion(self, funcion):
         """Ejecuta funcion(cursor) en una sola transacción; si regresa None hace rollback."""
+        if self.conexion is not None:
+            with self.conexion.cursor() as cursor:
+                return funcion(cursor)
         conexion = self.app._database_connection()
         try:
             with conexion.cursor() as cursor:
@@ -342,8 +537,13 @@ class RepoPostgres:
         fila = self._uno(_SELECT_DOCTOR + "WHERE pd.id = %s", (doctor_id,))
         return self._doctor(fila) if fila else None
 
+    def user_id_de_doctor(self, doctor_id):
+        fila = self._uno("SELECT usuario_id::text FROM perfil_doctor WHERE id = %s", (doctor_id,))
+        return fila[0] if fila else None
+
     def doctor_id_de_usuario(self, usuario_id):
-        return self.app._db_doctor_id(usuario_id)
+        fila = self._uno("SELECT id::text FROM perfil_doctor WHERE usuario_id = %s", (usuario_id,))
+        return fila[0] if fila else None
 
     def buscar_doctores(self, especialidad, ubicacion, texto, referencia):
         condiciones, params = [_SUSCRIPCION_VIGENTE], [referencia]
@@ -369,6 +569,118 @@ class RepoPostgres:
                        "ORDER BY dia_semana, hora_inicio", (doctor_id,))
         return [{"dia_semana": f[0], "hora_inicio": f[1], "hora_fin": f[2]} for f in filas]
 
+    def promociones(self, doctor_id, referencia=None, solo_activas=False):
+        sql = ("SELECT id::text, titulo, descripcion, descuento_porcentaje, fecha_inicio, fecha_fin, activa "
+               "FROM promocion WHERE doctor_id = %s")
+        params = [doctor_id]
+        if solo_activas:
+            sql += " AND activa AND fecha_inicio <= %s AND fecha_fin >= %s"
+            params.extend([referencia or reglas.hoy()] * 2)
+        sql += " ORDER BY fecha_inicio DESC"
+        return [{"id": f[0], "title": f[1], "description": f[2], "discountPercent": f[3],
+                 "start": f[4], "end": f[5], "active": f[6]} for f in self.q(sql, tuple(params))]
+
+    def inventario(self, doctor_id):
+        filas = self.q("SELECT id::text, nombre, cantidad, unidad, actualizado_en FROM inventario_insumo "
+                       "WHERE doctor_id = %s ORDER BY nombre", (doctor_id,))
+        return [{"id": f[0], "name": f[1], "quantity": float(f[2]), "unit": f[3], "updatedAt": f[4]}
+                for f in filas]
+
+    def guardar_insumo(self, doctor_id, item):
+        fila = self._uno("INSERT INTO inventario_insumo (doctor_id, nombre, cantidad, unidad) "
+                         "VALUES (%s, %s, %s, %s) ON CONFLICT (doctor_id, (lower(nombre))) DO UPDATE SET "
+                         "cantidad = EXCLUDED.cantidad, unidad = EXCLUDED.unidad, actualizado_en = now() "
+                         "RETURNING id::text, nombre, cantidad, unidad, actualizado_en",
+                         (doctor_id, item["name"], item["quantity"], item["unit"]))
+        return {"id": fila[0], "name": fila[1], "quantity": float(fila[2]), "unit": fila[3], "updatedAt": fila[4]}
+
+    def eliminar_insumo(self, doctor_id, item_id):
+        return self._uno("DELETE FROM inventario_insumo WHERE doctor_id = %s AND id = %s RETURNING id",
+                         (doctor_id, item_id)) is not None
+
+    def guardar_promocion(self, doctor_id, promo):
+        fila = self._uno("INSERT INTO promocion (doctor_id, titulo, descripcion, descuento_porcentaje, fecha_inicio, fecha_fin) "
+                         "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id::text, titulo, descripcion, "
+                         "descuento_porcentaje, fecha_inicio, fecha_fin, activa",
+                         (doctor_id, promo["title"], promo["description"], promo["discountPercent"],
+                          promo["start"], promo["end"]))
+        return {"id": fila[0], "title": fila[1], "description": fila[2], "discountPercent": fila[3],
+                "start": fila[4], "end": fila[5], "active": fila[6]}
+
+    def eliminar_promocion(self, doctor_id, promo_id):
+        return self._uno("DELETE FROM promocion WHERE doctor_id = %s AND id = %s RETURNING id",
+                         (doctor_id, promo_id)) is not None
+
+    def notificar(self, user_id, kind, title, message, reference=None):
+        fila = self._uno("INSERT INTO notificacion (usuario_id, tipo, titulo, mensaje, referencia) "
+                         "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING "
+                         "RETURNING id::text, creada_en, leida_en",
+                         (user_id, kind, title, message, reference))
+        if not fila:
+            return None
+        return {"id": fila[0], "type": kind, "title": title, "message": message, "reference": reference,
+                "createdAt": fila[1], "read": fila[2] is not None}
+
+    def notificaciones(self, user_id):
+        filas = self.q("SELECT id::text, tipo, titulo, mensaje, referencia, creada_en, leida_en FROM notificacion "
+                       "WHERE usuario_id = %s ORDER BY creada_en DESC LIMIT 100", (user_id,))
+        return [{"id": f[0], "type": f[1], "title": f[2], "message": f[3], "reference": f[4],
+                 "createdAt": f[5], "read": f[6] is not None} for f in filas]
+
+    def marcar_notificacion(self, user_id, notification_id):
+        fila = self._uno("UPDATE notificacion SET leida_en = COALESCE(leida_en, now()) "
+                         "WHERE usuario_id = %s AND id = %s RETURNING id::text, tipo, titulo, mensaje, "
+                         "referencia, creada_en, leida_en", (user_id, notification_id))
+        if not fila:
+            return None
+        return {"id": fila[0], "type": fila[1], "title": fila[2], "message": fila[3], "reference": fila[4],
+                "createdAt": fila[5], "read": True}
+
+    def puede_mensajear(self, user_a, user_b):
+        fila = self._uno(
+            "SELECT EXISTS (SELECT 1 FROM perfil_doctor pd WHERE "
+            "((pd.usuario_id = %s AND EXISTS (SELECT 1 FROM usuario p WHERE p.id = %s AND p.rol = 'PACIENTE')) "
+            "OR (pd.usuario_id = %s AND EXISTS (SELECT 1 FROM usuario p WHERE p.id = %s AND p.rol = 'PACIENTE'))) "
+            "AND (EXISTS (SELECT 1 FROM consentimiento_expediente ce WHERE ce.doctor_id = pd.id "
+            "AND ce.paciente_id = CASE WHEN pd.usuario_id = %s THEN %s::uuid ELSE %s::uuid END AND ce.estado_acceso) "
+            "OR EXISTS (SELECT 1 FROM cita c WHERE c.doctor_id = pd.id "
+            "AND c.paciente_id = CASE WHEN pd.usuario_id = %s THEN %s::uuid ELSE %s::uuid END)))",
+            (user_a, user_b, user_b, user_a, user_a, user_b, user_a, user_a, user_b, user_a))
+        return bool(fila and fila[0])
+
+    def mensajes(self, user_id, other_id):
+        self.q("UPDATE mensaje_usuario SET leido_en = COALESCE(leido_en, now()) "
+               "WHERE remitente_id = %s AND destinatario_id = %s AND leido_en IS NULL",
+               (other_id, user_id), fetch=False)
+        filas = self.q("SELECT id::text, remitente_id::text, destinatario_id::text, contenido, creado_en, leido_en "
+                       "FROM mensaje_usuario WHERE (remitente_id = %s AND destinatario_id = %s) "
+                       "OR (remitente_id = %s AND destinatario_id = %s) ORDER BY creado_en",
+                       (user_id, other_id, other_id, user_id))
+        return [{"id": f[0], "senderId": f[1], "recipientId": f[2], "content": f[3],
+                 "createdAt": f[4], "read": f[2] == user_id and f[5] is not None} for f in filas]
+
+    def conversaciones(self, user_id):
+        filas = self.q("SELECT id::text, remitente_id::text, destinatario_id::text, contenido, creado_en "
+                       "FROM mensaje_usuario WHERE remitente_id = %s OR destinatario_id = %s "
+                       "ORDER BY creado_en DESC LIMIT 500", (user_id, user_id))
+        latest = {}
+        for fila in filas:
+            other_id = fila[2] if fila[1] == user_id else fila[1]
+            if other_id not in latest:
+                usuario = self.usuario(other_id) or {}
+                count = self._uno("SELECT count(*) FROM mensaje_usuario WHERE remitente_id = %s "
+                                  "AND destinatario_id = %s AND leido_en IS NULL", (other_id, user_id))
+                latest[other_id] = {"userId": other_id, "name": usuario.get("name") or usuario.get("email"),
+                                    "lastMessage": fila[3], "updatedAt": fila[4], "unread": int(count[0])}
+        return list(latest.values())
+
+    def enviar_mensaje(self, sender_id, recipient_id, content):
+        fila = self._uno("INSERT INTO mensaje_usuario (remitente_id, destinatario_id, contenido) "
+                         "VALUES (%s, %s, %s) RETURNING id::text, creado_en",
+                         (sender_id, recipient_id, content))
+        return {"id": fila[0], "senderId": sender_id, "recipientId": recipient_id,
+                "content": content, "createdAt": fila[1], "read": False}
+
     def reemplazar_horario(self, doctor_id, bloques):
         def reemplazar(cursor):
             cursor.execute("DELETE FROM disponibilidad WHERE doctor_id = %s", (doctor_id,))
@@ -381,10 +693,11 @@ class RepoPostgres:
 
         self._transaccion(reemplazar)
 
-    def ocupados(self, doctor_id, dia):
+    def ocupados(self, doctor_id, dia, excluir_id=None):
         inicio = datetime.combine(dia, time(0, 0), tzinfo=ZONA)
         filas = self.q("SELECT fecha_hora FROM cita WHERE doctor_id = %s AND estado <> 'CANCELADA' "
-                       "AND fecha_hora >= %s AND fecha_hora < %s", (doctor_id, inicio, inicio + timedelta(days=1)))
+                       "AND fecha_hora >= %s AND fecha_hora < %s AND (%s IS NULL OR id <> %s)",
+                       (doctor_id, inicio, inicio + timedelta(days=1), excluir_id, excluir_id))
         return [f[0] for f in filas]
 
     # -- citas --------------------------------------------------------------
@@ -442,6 +755,7 @@ class RepoPostgres:
     def registrar_acceso(self, paciente_id, actor_id):
         self.q("INSERT INTO bitacora_acceso_expediente (paciente_id, actor_id) VALUES (%s, %s)",
                (paciente_id, actor_id), fetch=False)
+        self.app._audit_record_access(paciente_id, actor_id)
 
     def historial(self, paciente_id):
         filas = self.q(
@@ -464,7 +778,9 @@ class RepoPostgres:
                 for f in filas]
 
     def tiene_consentimiento(self, paciente_id, doctor_id):
-        return self.app._db_has_consent(paciente_id, doctor_id)
+        fila = self._uno("SELECT estado_acceso FROM consentimiento_expediente "
+                         "WHERE paciente_id = %s AND doctor_id = %s", (paciente_id, doctor_id))
+        return bool(fila and fila[0])
 
     def pacientes_de(self, doctor_id):
         filas = self.q(
@@ -504,6 +820,33 @@ class RepoPostgres:
 
         return self._transaccion(registrar)
 
+    def cambiar_estado_cita(self, cita_id, estado_actual, estado_nuevo):
+        return self._uno(
+            "UPDATE cita SET estado = %s WHERE id = %s AND estado = %s RETURNING id::text",
+            (estado_nuevo, cita_id, estado_actual),
+        ) is not None
+
+    def reprogramar_cita(self, cita_id, fecha_hora):
+        try:
+            return self._uno("UPDATE cita SET fecha_hora = %s WHERE id = %s AND estado IN ('PENDIENTE', 'CONFIRMADA') "
+                             "RETURNING id", (fecha_hora, cita_id)) is not None
+        except Exception as error:
+            if getattr(error, "pgcode", None) == "23505":
+                raise ErrorApi(409, "Ese horario acaba de ser ocupado, elige otro") from error
+            raise
+
+    def receta(self, receta_id):
+        fila = self._uno(
+            "SELECT r.id::text, c.paciente_id::text, c.doctor_id::text, r.diagnostico, r.tratamiento, "
+            "c.fecha_hora, pd.nombre_completo, pd.especialidad FROM receta r "
+            "JOIN cita c ON c.id = r.cita_id JOIN perfil_doctor pd ON pd.id = c.doctor_id WHERE r.id = %s",
+            (receta_id,),
+        )
+        if not fila:
+            return None
+        return {"id": fila[0], "patientId": fila[1], "doctorId": fila[2], "diagnosis": fila[3],
+                "treatment": fila[4], "dateTime": fila[5], "doctorName": fila[6], "specialty": fila[7]}
+
 
 
 def semilla_postgres(cursor):
@@ -522,6 +865,9 @@ def semilla_postgres(cursor):
 
 
 def repositorio(app):
+    actual = _repositorio_actual.get()
+    if actual is not None:
+        return actual
     return RepoPostgres(app) if app._database_ready() else RepoMemoria(app)
 
 
@@ -578,9 +924,65 @@ def _doctor_visible(repo, doctor_id):
     return doctor
 
 
-def _horarios_libres(repo, doctor, dia):
+def _horarios_libres(repo, doctor, dia, excluir_id=None):
     return reglas.generar_horarios(dia, repo.horario(doctor["id"]), doctor["durationMin"],
-                                   repo.ocupados(doctor["id"], dia), reglas.ahora())
+                                   repo.ocupados(doctor["id"], dia, excluir_id), reglas.ahora())
+
+
+def _notificar(repo, user_id, tipo, titulo, mensaje, referencia=None):
+    if user_id:
+        repo.notificar(user_id, tipo, titulo, mensaje, referencia)
+
+
+def _notificaciones_actualizadas(repo, usuario):
+    user_id = usuario["sub"]
+    actuales = repo.notificaciones(user_id)
+    referencias = {item.get("reference") for item in actuales}
+    doctor_id = repo.doctor_id_de_usuario(user_id) if usuario["role"] in reglas.ROLES_DOCTOR else None
+    ahora = reglas.ahora()
+    for cita in repo.citas_de(user_id, doctor_id):
+        fecha = reglas.fecha_hora(cita["dateTime"], "dateTime")
+        if cita["status"] not in reglas.ESTADOS_CITA_ACTIVA or not ahora < fecha <= ahora + timedelta(hours=24):
+            continue
+        referencia = f"recordatorio-cita:{cita['id']}:{fecha.isoformat()}"
+        if referencia not in referencias:
+            _notificar(repo, user_id, "RECORDATORIO_CITA", "Tienes una cita próximamente",
+                       f"Tienes una cita con {cita['doctorName']} el {fecha.strftime('%d/%m/%Y a las %H:%M')}.", referencia)
+    if doctor_id:
+        suscripcion = _suscripcion(repo, doctor_id)
+        if suscripcion and suscripcion["status"] == "ACTIVA":
+            dias = (suscripcion["end"] - reglas.hoy()).days
+            referencia = f"vencimiento-suscripcion:{suscripcion['end']}"
+            if 0 <= dias <= 7 and referencia not in referencias:
+                _notificar(repo, user_id, "VENCIMIENTO_SUSCRIPCION", "Tu suscripción está por vencer",
+                           f"Tu suscripción termina el {suscripcion['end']}. Renueva para mantener tu perfil visible.",
+                           referencia)
+    return repo.notificaciones(user_id)
+
+
+def generar_recordatorios(app):
+    """Trabajo periódico invocado por EventBridge, sin sesiones de navegador.
+
+    Sólo considera usuarios con citas próximas o suscripciones por vencer.
+    Las referencias únicas de notificacion hacen seguros los reintentos.
+    """
+    repo = repositorio(app)
+    ahora = reglas.ahora()
+    if repo.usa_uuid:
+        filas = repo.q(
+            "SELECT DISTINCT u.id::text, u.rol FROM usuario u WHERE "
+            "EXISTS (SELECT 1 FROM cita c JOIN perfil_doctor pd ON pd.id = c.doctor_id "
+            "WHERE (c.paciente_id = u.id OR pd.usuario_id = u.id) "
+            "AND c.estado IN ('PENDIENTE','CONFIRMADA') AND c.fecha_hora > %s AND c.fecha_hora <= %s) "
+            "OR EXISTS (SELECT 1 FROM suscripcion s JOIN perfil_doctor pd ON pd.id = s.doctor_id "
+            "WHERE pd.usuario_id = u.id AND s.estado = 'ACTIVA' AND s.fecha_fin BETWEEN %s AND %s)",
+            (ahora, ahora + timedelta(hours=24), reglas.hoy(), reglas.hoy() + timedelta(days=7)))
+        usuarios = [{"sub": fila[0], "role": fila[1]} for fila in filas]
+    else:
+        usuarios = [{"sub": u["id"], "role": u["role"]} for u in repo.db["users"]]
+    for usuario in usuarios:
+        _notificaciones_actualizadas(repo, usuario)
+    return {"processedUsers": len(usuarios), "status": "ok"}
 
 
 def _cita_propia(repo, usuario, cita_id):
@@ -617,9 +1019,12 @@ def buscar_doctores(app, query):
         reglas.texto(query, "q", requerido=False, max_len=100),
         reglas.hoy(),
     )
+    for doctor in doctores:
+        doctor["promotions"] = repo.promociones(doctor["id"], reglas.hoy(), solo_activas=True)
     return _ok(app, doctores)
 
 
+@transaccional
 def agendar_cita(app, usuario, body):
     repo = repositorio(app)
     doctor = _doctor_visible(repo, body.get("doctorId"))
@@ -628,7 +1033,13 @@ def agendar_cita(app, usuario, body):
     reglas.validar_fecha_agendable(fecha_hora.date(), reglas.hoy())
     if fecha_hora not in _horarios_libres(repo, doctor, fecha_hora.date()):
         raise ErrorApi(409, "Ese horario no está disponible; consulta /api/doctors/{id}/availability")
-    return _ok(app, repo.crear_cita(usuario["sub"], doctor["id"], fecha_hora, motivo), 201)
+    cita = repo.crear_cita(usuario["sub"], doctor["id"], fecha_hora, motivo)
+    _notificar(repo, doctor["userId"], "CITA_NUEVA", "Nueva solicitud de cita",
+               f"{cita['patientName']} solicitó una cita para {reglas.fecha_hora(cita['dateTime'], 'dateTime').strftime('%d/%m/%Y %H:%M')}.",
+               cita["id"])
+    _notificar(repo, usuario["sub"], "CITA_SOLICITADA", "Cita solicitada",
+               f"Tu cita con {doctor['name']} está pendiente de confirmación.", cita["id"])
+    return _ok(app, cita, 201)
 
 
 def listar_citas(app, usuario, query):
@@ -637,6 +1048,83 @@ def listar_citas(app, usuario, query):
     estado = reglas.opcion(query, "status", reglas.ESTADOS_CITA, requerido=False)
     citas = [c for c in repo.citas_de(usuario["sub"], doctor_id) if not estado or c["status"] == estado]
     return _ok(app, citas)
+
+
+@transaccional
+def actualizar_estado_cita(app, usuario, cita_id, body):
+    repo = repositorio(app)
+    cita = _cita_propia(repo, usuario, cita_id)
+    estado_nuevo = reglas.opcion(body, "status", ("CONFIRMADA", "CANCELADA"))
+    ahora = reglas.ahora()
+    fecha = reglas.fecha_hora(cita["dateTime"], "dateTime")
+    if fecha <= ahora:
+        raise ErrorApi(409, "La cita ya comenzó y no se puede cambiar")
+    if usuario["role"] == "PACIENTE":
+        if estado_nuevo != "CANCELADA":
+            raise ErrorApi(403, "El paciente puede cancelar, pero no confirmar, una cita")
+    else:
+        doctor_id = _doctor_de_sesion(repo, usuario)
+        if cita["doctorId"] != doctor_id:
+            raise ErrorApi(404, "La cita no existe")
+        if estado_nuevo == "CONFIRMADA" and cita["status"] != "PENDIENTE":
+            raise ErrorApi(409, "Sólo se puede confirmar una cita pendiente")
+    if cita["status"] not in reglas.ESTADOS_CITA_ACTIVA:
+        raise ErrorApi(409, "La cita ya no está activa")
+    if not repo.cambiar_estado_cita(cita["id"], cita["status"], estado_nuevo):
+        raise ErrorApi(409, "La cita cambió mientras se actualizaba")
+    resultado = repo.cita(cita["id"]) if repo.usa_uuid else next(
+        c for c in repo.citas_de(cita["patientId"], None) if c["id"] == cita["id"])
+    receptor = cita["patientId"] if usuario["role"] in reglas.ROLES_DOCTOR else repo.user_id_de_doctor(cita["doctorId"])
+    etiqueta = "confirmada" if estado_nuevo == "CONFIRMADA" else "cancelada"
+    _notificar(repo, receptor, f"CITA_{estado_nuevo}", f"Cita {etiqueta}",
+               f"La cita con {cita['doctorName']} del {reglas.fecha_hora(cita['dateTime'], 'dateTime').strftime('%d/%m/%Y %H:%M')} fue {etiqueta}.",
+               cita["id"])
+    return _ok(app, resultado)
+
+
+@transaccional
+def reprogramar_cita(app, usuario, cita_id, body):
+    repo = repositorio(app)
+    cita = _cita_propia(repo, usuario, cita_id)
+    if cita["status"] not in reglas.ESTADOS_CITA_ACTIVA:
+        raise ErrorApi(409, "Sólo puedes reprogramar una cita pendiente o confirmada")
+    if reglas.fecha_hora(cita["dateTime"], "dateTime") <= reglas.ahora():
+        raise ErrorApi(409, "La cita ya comenzó y no se puede reprogramar")
+    fecha_hora = reglas.fecha_hora(body.get("dateTime"), "dateTime")
+    reglas.validar_fecha_agendable(fecha_hora.date(), reglas.hoy())
+    doctor = repo.doctor(cita["doctorId"])
+    if not reglas.suscripcion_vigente(_suscripcion(repo, cita["doctorId"]), reglas.hoy()):
+        raise ErrorApi(409, "El profesional ya no tiene una suscripción vigente")
+    if fecha_hora not in _horarios_libres(repo, doctor, fecha_hora.date(), excluir_id=cita["id"]):
+        raise ErrorApi(409, "Ese horario no está disponible; elige otro")
+    anterior = cita["dateTime"]
+    if not repo.reprogramar_cita(cita["id"], fecha_hora):
+        raise ErrorApi(409, "No se pudo reprogramar la cita; actualiza la agenda")
+    resultado = repo.cita(cita["id"]) if repo.usa_uuid else next(
+        c for c in repo.citas_de(cita["patientId"], None) if c["id"] == cita["id"])
+    receptor = cita["patientId"] if usuario["role"] in reglas.ROLES_DOCTOR else repo.user_id_de_doctor(cita["doctorId"])
+    _notificar(repo, receptor, "CITA_REPROGRAMADA", "Cita reprogramada",
+               f"La cita con {cita['doctorName']} cambió de {reglas.fecha_hora(anterior, 'dateTime').strftime('%d/%m/%Y %H:%M')} a {fecha_hora.strftime('%d/%m/%Y %H:%M')}.",
+               cita["id"])
+    return _ok(app, resultado)
+
+
+def ver_receta(app, usuario, receta_id):
+    repo = repositorio(app)
+    receta = repo.receta(reglas.identificador(receta_id, "prescriptionId", repo.usa_uuid))
+    if receta is None:
+        raise ErrorApi(404, "La receta no existe")
+    if usuario["role"] == "PACIENTE":
+        if receta["patientId"] != usuario["sub"]:
+            raise ErrorApi(404, "La receta no existe")
+    else:
+        doctor_id = _doctor_de_sesion(repo, usuario)
+        if receta["doctorId"] != doctor_id:
+            raise ErrorApi(404, "La receta no existe")
+        _requerir_suscripcion(repo, doctor_id)
+        if not repo.tiene_consentimiento(receta["patientId"], doctor_id):
+            raise ErrorApi(403, "Se requiere consentimiento vigente")
+    return _ok(app, receta)
 
 
 def validar_doctor_para_consentimiento(app, doctor_id):
@@ -672,6 +1160,7 @@ def _expediente_completo(repo, paciente_id):
     }
 
 
+@transaccional
 def registrar_consulta(app, usuario, body):
     repo = repositorio(app)
     doctor_id = _doctor_de_sesion(repo, usuario)
@@ -684,8 +1173,8 @@ def registrar_consulta(app, usuario, body):
         raise ErrorApi(403, "Se requiere consentimiento vigente")
     if cita["status"] not in reglas.ESTADOS_CITA_ACTIVA:
         raise ErrorApi(409, f"No se puede registrar la consulta de una cita {cita['status']}")
-    if reglas.fecha_hora(cita["dateTime"], "dateTime").date() > reglas.hoy():
-        raise ErrorApi(409, "No se puede registrar la consulta de una cita futura")
+    if reglas.fecha_hora(cita["dateTime"], "dateTime") > reglas.ahora():
+        raise ErrorApi(409, "No se puede registrar la consulta antes de la hora de la cita")
 
     diagnostico = reglas.texto(body, "diagnosis", max_len=5000, min_len=3)
     tratamiento = reglas.texto(body, "treatment", max_len=5000, min_len=3)
@@ -696,6 +1185,9 @@ def registrar_consulta(app, usuario, body):
                                           receta_id)
     if consulta_id is None:
         raise ErrorApi(409, "La cita cambió de estado mientras se registraba la consulta")
+    _notificar(repo, paciente_id, "RECETA_NUEVA", "Tu receta está lista",
+               f"{usuario.get('name') or 'Tu profesional'} registró la consulta y la receta ya está disponible en tu historial.",
+               cita["id"])
     return _ok(app, {"id": consulta_id, "appointmentId": cita["id"], "diagnosis": diagnostico,
                      "treatment": tratamiento, "notes": notas, "prescriptionId": receta_id}, 201)
 
@@ -744,7 +1236,8 @@ def atender_publico(app, method, path, query, body):
 
     if method == "GET" and len(partes) == 3 and partes[:2] == ["api", "doctors"]:
         doctor = _doctor_visible(repo, partes[2])
-        return _ok(app, {**doctor, "schedule": repo.horario(doctor["id"])})
+        return _ok(app, {**doctor, "schedule": repo.horario(doctor["id"]),
+                         "promotions": repo.promociones(doctor["id"], reglas.hoy(), solo_activas=True)})
 
     if method == "GET" and len(partes) == 4 and partes[:2] == ["api", "doctors"] and partes[3] == "availability":
         doctor = _doctor_visible(repo, partes[2])
@@ -755,10 +1248,46 @@ def atender_publico(app, method, path, query, body):
     return None
 
 
+@transaccional
 def atender_autenticado(app, usuario, method, path, query, body):
     """Rutas que requieren sesión. Regresa None si la ruta no es de este módulo."""
     partes = _segmentos(path)
     repo = repositorio(app)
+
+    if method == "GET" and partes == ["api", "notifications"]:
+        return _ok(app, _notificaciones_actualizadas(repo, usuario))
+
+    if method == "PUT" and len(partes) == 4 and partes[:2] == ["api", "notifications"] and partes[3] == "read":
+        notification_id = reglas.identificador(partes[2], "notificationId", repo.usa_uuid)
+        notificacion = repo.marcar_notificacion(usuario["sub"], notification_id)
+        if not notificacion:
+            raise ErrorApi(404, "La notificación no existe")
+        return _ok(app, notificacion)
+
+    if method == "GET" and partes == ["api", "messages"]:
+        if usuario["role"] in reglas.ROLES_DOCTOR:
+            _requerir_suscripcion(repo, _doctor_de_sesion(repo, usuario))
+        return _ok(app, repo.conversaciones(usuario["sub"]))
+
+    if method == "GET" and len(partes) == 3 and partes[:2] == ["api", "messages"]:
+        if usuario["role"] in reglas.ROLES_DOCTOR:
+            _requerir_suscripcion(repo, _doctor_de_sesion(repo, usuario))
+        otro_id = reglas.identificador(partes[2], "userId", repo.usa_uuid)
+        if not repo.puede_mensajear(usuario["sub"], otro_id):
+            raise ErrorApi(404, "La conversación no existe")
+        return _ok(app, repo.mensajes(usuario["sub"], otro_id))
+
+    if method == "POST" and partes == ["api", "messages"]:
+        if usuario["role"] in reglas.ROLES_DOCTOR:
+            _requerir_suscripcion(repo, _doctor_de_sesion(repo, usuario))
+        recipient_id = reglas.identificador(body.get("recipientId"), "recipientId", repo.usa_uuid)
+        if not repo.puede_mensajear(usuario["sub"], recipient_id):
+            raise ErrorApi(403, "Para iniciar una conversación debe existir un consentimiento o una cita con ese profesional")
+        contenido = reglas.texto(body, "content", max_len=2000)
+        message = repo.enviar_mensaje(usuario["sub"], recipient_id, contenido)
+        _notificar(repo, recipient_id, "MENSAJE_NUEVO", "Nuevo mensaje",
+                   f"Tienes un mensaje nuevo de {usuario.get('name') or usuario.get('email')}.", message["id"])
+        return _ok(app, message, 201)
 
     # --- Perfil de la sesión --------------------------------------------------
     if method == "GET" and partes == ["api", "me"]:
@@ -795,6 +1324,47 @@ def atender_autenticado(app, usuario, method, path, query, body):
         repo.reemplazar_horario(doctor_id, bloques)
         return _ok(app, repo.horario(doctor_id))
 
+    if partes[:3] == ["api", "doctor", "inventory"]:
+        doctor_id = _doctor_de_sesion(repo, usuario)
+        _requerir_suscripcion(repo, doctor_id)
+        if method == "GET" and len(partes) == 3:
+            return _ok(app, repo.inventario(doctor_id))
+        if method == "POST" and len(partes) == 3:
+            item = {"name": reglas.texto(body, "name", max_len=120),
+                    "quantity": reglas.decimal(body, "quantity", Decimal("0"), Decimal("100000000")),
+                    "unit": reglas.texto(body, "unit", max_len=30)}
+            try:
+                return _ok(app, repo.guardar_insumo(doctor_id, item), 201)
+            except Exception as error:
+                if getattr(error, "pgcode", None) == "23505":
+                    raise ErrorApi(409, "No se pudo guardar el insumo") from error
+                raise
+        if method == "DELETE" and len(partes) == 4:
+            item_id = reglas.identificador(partes[3], "inventoryId", repo.usa_uuid)
+            if not repo.eliminar_insumo(doctor_id, item_id):
+                raise ErrorApi(404, "El insumo no existe")
+            return _ok(app, {"deleted": True})
+
+    if partes[:3] == ["api", "doctor", "promotions"]:
+        doctor_id = _doctor_de_sesion(repo, usuario)
+        _requerir_suscripcion(repo, doctor_id)
+        if method == "GET" and len(partes) == 3:
+            return _ok(app, repo.promociones(doctor_id))
+        if method == "POST" and len(partes) == 3:
+            promo = {"title": reglas.texto(body, "title", max_len=120),
+                     "description": reglas.texto(body, "description", requerido=False, max_len=500) or "",
+                     "discountPercent": reglas.entero(body, "discountPercent", 1, 90),
+                     "start": reglas.fecha(body.get("start"), "start"),
+                     "end": reglas.fecha(body.get("end"), "end")}
+            if promo["end"] < promo["start"]:
+                raise ErrorApi(400, "La fecha final debe ser igual o posterior a la inicial")
+            return _ok(app, repo.guardar_promocion(doctor_id, promo), 201)
+        if method == "DELETE" and len(partes) == 4:
+            promo_id = reglas.identificador(partes[3], "promotionId", repo.usa_uuid)
+            if not repo.eliminar_promocion(doctor_id, promo_id):
+                raise ErrorApi(404, "La promoción no existe")
+            return _ok(app, {"deleted": True})
+
     # --- Flujo 2: expediente y consentimientos ----------------------------------
     if method == "PUT" and partes == ["api", "records"]:
         _requerir_rol(usuario, "PACIENTE")
@@ -815,6 +1385,43 @@ def atender_autenticado(app, usuario, method, path, query, body):
     if method == "GET" and partes == ["api", "consents"]:
         _requerir_rol(usuario, "PACIENTE")
         return _ok(app, repo.consentimientos(usuario["sub"]))
+
+    # Los objetos clínicos se mantienen privados en S3; sólo se entregan URLs firmadas y breves.
+    if partes[:3] == ["api", "records", "documents"]:
+        if method == "POST" and len(partes) == 3:
+            _requerir_rol(usuario, "PACIENTE")
+            try:
+                carga = servicios_aws.crear_carga(usuario["sub"], body.get("name", ""),
+                                                  body.get("contentType", ""), body.get("size"))
+            except ValueError as error:
+                raise ErrorApi(400, str(error)) from error
+            except RuntimeError as error:
+                raise ErrorApi(503, "El almacenamiento seguro no está configurado") from error
+            return _ok(app, carga, 201)
+        if method == "GET" and len(partes) == 3:
+            if usuario["role"] == "PACIENTE":
+                paciente_id = usuario["sub"]
+            else:
+                doctor_id = _doctor_de_sesion(repo, usuario)
+                paciente_id = reglas.identificador(query.get("patientId"), "patientId", repo.usa_uuid)
+                _requerir_suscripcion(repo, doctor_id)
+                if not repo.tiene_consentimiento(paciente_id, doctor_id):
+                    raise ErrorApi(403, "Se requiere consentimiento vigente")
+                repo.registrar_acceso(paciente_id, usuario["sub"])
+            try:
+                return _ok(app, servicios_aws.listar_documentos(paciente_id))
+            except RuntimeError as error:
+                raise ErrorApi(503, "El almacenamiento seguro no está configurado") from error
+        if method == "DELETE" and len(partes) == 4:
+            _requerir_rol(usuario, "PACIENTE")
+            try:
+                eliminado = servicios_aws.eliminar_documento(usuario["sub"],
+                                                             reglas.identificador(partes[3], "documentId", True))
+            except RuntimeError as error:
+                raise ErrorApi(503, "El almacenamiento seguro no está configurado") from error
+            if not eliminado:
+                raise ErrorApi(404, "El archivo no existe")
+            return _ok(app, {"deleted": True})
 
     # --- Flujo 3: suscripción y pacientes --------------------------------------
     if method == "POST" and partes == ["api", "subscriptions", "pay"]:

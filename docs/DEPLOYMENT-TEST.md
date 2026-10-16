@@ -1,75 +1,23 @@
-# Prueba funcional temporal de MiDoc`r`n`r`n> Este despliegue fue utilizado para validar la integración AWS y posteriormente fue eliminado con `terraform destroy`. Las URLs de abajo son evidencia histórica; deben regenerarse al volver a ejecutar Terraform.`r`n
-## URL pública del backend
+# Verificación real de fase dos
 
-```text
-https://2obhgm1da2.execute-api.us-east-1.amazonaws.com
-```
+Fecha: 16/10/2026. Entorno: us-east-1, AWS Academy Learner Lab. Sólo cuentas/datos sintéticos.
 
-La URL correspondió a API Gateway HTTP y ejecutó el backend Python en AWS Lambda. El despliegue temporal utilizó RDS PostgreSQL para las entidades principales, DynamoDB para eventos, Secrets Manager y Lambda dentro de la VPC.
+## Evidencia actual
 
-## URL pública del frontend
+- [Prueba de los tres flujos](evidencia-aws-e2e.json): 43 peticiones API verificadas más registro de consulta y apertura de receta en Edge. Incluye pago aprobado/rechazado, conflictos, roles, reserva/confirmación/reprogramación/cancelación, expediente, autorización/revocación, S3 privado, inventario, promociones, mensajes y consulta/historial/receta.
+- [Prueba de interfaces](evidencia-browser.json): seis recorridos, ocho vistas axe sin infracciones detectadas, sin errores JS y anchos de 320/390px comprobados. Incluye registro, reprogramación con éxito visible, expediente y DICOM con MIME genérico cargado por HTTPS/CORS.
+- [Recordatorios programados](evidencia-recordatorios.json): invocación automática real observada en CloudWatch, sin navegador. Regla restaurada a rate(15 minutes).
+- 36 pruebas locales aprobadas, build Angular aprobado y Terraform fmt/validate correctos.
+- RDS PostgreSQL16.13 available, privado/cifrado. Lambda Python3.12 Active/Successful con LabRole. DynamoDB Query confirmó dos eventos del primer paciente sintético.
 
-Después de ejecutar `terraform apply`, consulta:
+Frontend: https://midoc-frontend-647018795197.s3.us-east-1.amazonaws.com/index.html
 
-```powershell
-terraform -chdir=infrastructure output -raw frontend_url
-```
+API: https://4otc5sejki.execute-api.us-east-1.amazonaws.com
 
-El frontend se publica en un bucket S3 mediante AWS CLI desde Terraform. Esta ruta evita la lectura de Object Lock bloqueada en el provider de Terraform.
+El frontend se sirve por el endpoint REST HTTPS de S3. El endpoint antiguo website HTTP no se usa como URL de entrega. CORS del bucket privado admite el origen HTTPS. Las URLs clínicas firmadas duran300segundos.
 
-## Pruebas rápidas en PowerShell
+## Límites
 
-```powershell
-$api = "https://2obhgm1da2.execute-api.us-east-1.amazonaws.com"
+Suscripciones sin cobros reales; sin correo/push; sin certificación WCAG manual completa. Las pruebas smoke generan datos E2E DEMO persistentes y eliminan objetos/insumos/promociones temporales. No se indujeron fallos de infraestructura en AWS. La reversión ante fallo de aviso se probó mediante regresiones locales del repositorio y de commit/rollback del adaptador SQL.
 
-# Salud
-Invoke-RestMethod "$api/health"
-
-# Búsqueda de profesionales
-Invoke-RestMethod "$api/api/doctors"
-
-# Login de paciente de demostración
-$login = Invoke-RestMethod "$api/api/auth/login" -Method Post `
-  -ContentType "application/json" `
-  -Body '{"email":"paciente@midoc.local","password":"paciente-demo"}'
-$headers = @{ Authorization = "Bearer $($login.token)" }
-
-# Agenda
-Invoke-RestMethod "$api/api/appointments" -Method Post -Headers $headers `
-  -ContentType "application/json" `
-  -Body '{"doctorId":"d-1","dateTime":"2026-10-20T10:00:00Z"}'
-
-# Consentimiento
-Invoke-RestMethod "$api/api/consents" -Method Post -Headers $headers `
-  -ContentType "application/json" `
-  -Body '{"doctorId":"d-1","granted":true}'
-
-# Login de doctor y lectura del expediente autorizado
-$doctor = Invoke-RestMethod "$api/api/auth/login" -Method Post `
-  -ContentType "application/json" `
-  -Body '{"email":"doctor@midoc.local","password":"doctor-demo"}'
-$doctorHeaders = @{ Authorization = "Bearer $($doctor.token)" }
-Invoke-RestMethod "$api/api/records?patientId=u-patient-1" -Headers $doctorHeaders
-Invoke-RestMethod "$api/api/subscriptions" -Headers $doctorHeaders
-```
-
-## Frontend local contra la API desplegada
-
-El frontend Angular usa la API local cuando se abre en `localhost` y la URL pública de arriba cuando se sirve desde otro host. Para ejecutarlo:
-
-```powershell
-npm install --prefix frontend
-npm start --prefix frontend
-```
-
-El bucket fue público sólo para lectura de archivos del frontend y se cifró en reposo. No contenía secretos ni datos clínicos.
-
-## Eliminación posterior
-
-Cuando termines las pruebas, desde `infrastructure` ejecuta:
-
-```powershell
-terraform destroy -auto-approve
-```
-
-Este comando elimina Lambda, API Gateway, RDS, DynamoDB, Secrets Manager y el bucket S3 creados por esta ejecución.
+El video queda pendiente por instrucción del usuario. Los recursos permanecen activos y consumen presupuesto. Ver [revisión integral](REVISION-INTEGRAL.md) para requisitos, correcciones y pendientes reales.

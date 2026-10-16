@@ -1,3 +1,9 @@
+@if (loading()) {
+  <section class="panel" role="status" aria-live="polite">Cargando tu consultorio…</section>
+} @else if (loadFailed()) {
+  <section class="panel"><p role="alert">{{ subscriptionMessage() }}</p>
+    <button type="button" (click)="load()">Intentar de nuevo</button></section>
+} @else {
 <section class="panel">
   <h2>Suscripción</h2>
   @if (subscription(); as s) {
@@ -10,34 +16,84 @@
   } @else {
     <p><span class="badge" data-status="PENDIENTE">SIN SUSCRIPCIÓN</span> Suscríbete para aparecer en el marketplace y usar el panel.</p>
   }
+  <p class="notice">Este cobro es una simulación para la demostración. MiDoc no procesa pagos reales ni debes introducir datos bancarios reales.</p>
   <form class="grid-form" (ngSubmit)="pay()">
     <label>Titular <input name="cardHolder" [(ngModel)]="card.cardHolder" required></label>
-    <label>Número de tarjeta <input name="cardNumber" [(ngModel)]="card.cardNumber" required autocomplete="off"></label>
+    <label>Tarjeta de prueba <input name="cardNumber" [(ngModel)]="card.cardNumber" required autocomplete="off" inputmode="numeric"></label>
     <label>Mes <input type="number" name="expMonth" min="1" max="12" [(ngModel)]="card.expMonth"></label>
     <label>Año <input type="number" name="expYear" [(ngModel)]="card.expYear"></label>
     <label>CVV <input name="cvv" [(ngModel)]="card.cvv" maxlength="4" autocomplete="off"></label>
-    <button type="submit">{{ subscription()?.active ? 'Pagar otro mes ($20 USD)' : 'Pagar $20 USD' }}</button>
+    <button type="submit" [disabled]="paying()">{{ paying() ? 'Validando pago de prueba…' : subscription()?.active ? 'Pagar otro mes ($20 USD)' : 'Pagar $20 USD' }}</button>
   </form>
-  <p class="muted">Pago simulado. Aprobada: 4242 4242 4242 4242 · Rechazada: 4000 0000 0000 0002.</p>
+  <p class="muted">Aprobada: 4242 4242 4242 4242 · Rechazada: 4000 0000 0000 0002.</p>
   @if (subscriptionMessage()) { <p role="status" class="notice">{{ subscriptionMessage() }}</p> }
+</section>
+
+<section class="panel" aria-labelledby="inventory-title">
+  <h2 id="inventory-title">Inventario del consultorio</h2>
+  <p class="muted">Registra y actualiza existencias de insumos. Este inventario es privado para tu consultorio.</p>
+  @if (subscription()?.active) {
+  <form class="grid-form" (ngSubmit)="saveInventoryItem()">
+    <label>Insumo <input name="inventoryName" [(ngModel)]="inventoryForm.name" maxlength="120" required></label>
+    <label>Cantidad <input type="number" name="inventoryQuantity" [(ngModel)]="inventoryForm.quantity" min="0" max="100000000" step="0.01" required></label>
+    <label>Unidad <input name="inventoryUnit" [(ngModel)]="inventoryForm.unit" maxlength="30" required placeholder="piezas, cajas, ml"></label>
+    <button type="submit" [disabled]="savingInventory()">{{ savingInventory() ? 'Guardando…' : 'Guardar existencias' }}</button>
+  </form>
+  @if (inventoryMessage()) { <p role="status" aria-live="polite">{{ inventoryMessage() }}</p> }
+  <ul class="compact">
+    @for (item of inventory(); track item.id) {
+      <li><strong>{{ item.name }}</strong> · {{ item.quantity }} {{ item.unit }}
+        <button type="button" class="link danger-text" (click)="deleteInventoryItem(item)">Eliminar {{ item.name }}</button></li>
+    } @empty { <li>No hay insumos registrados.</li> }
+  </ul>
+  } @else {
+    <p class="notice">Activa la suscripción de demostración para administrar inventario.</p>
+  }
+</section>
+
+<section class="panel" aria-labelledby="promotions-title">
+  <h2 id="promotions-title">Promociones del marketplace</h2>
+  <p class="muted">Publica ofertas con fechas y descuento claros. No se realizan cobros ni canjes automáticos.</p>
+  @if (subscription()?.active) {
+  <form class="grid-form" (ngSubmit)="savePromotion()">
+    <label>Título <input name="promotionTitle" [(ngModel)]="promotionForm.title" maxlength="120" required></label>
+    <label>Descuento (%) <input type="number" name="discount" [(ngModel)]="promotionForm.discountPercent" min="1" max="90" required></label>
+    <label>Inicia <input type="date" name="promotionStart" [(ngModel)]="promotionForm.start" required></label>
+    <label>Termina <input type="date" name="promotionEnd" [(ngModel)]="promotionForm.end" [min]="promotionForm.start" required></label>
+    <label class="wide">Descripción <textarea name="promotionDescription" [(ngModel)]="promotionForm.description" maxlength="500" rows="2"></textarea></label>
+    <button type="submit" [disabled]="savingPromotion()">{{ savingPromotion() ? 'Publicando…' : 'Publicar promoción' }}</button>
+  </form>
+  @if (promotionMessage()) { <p role="status" aria-live="polite">{{ promotionMessage() }}</p> }
+  <ul class="compact">
+    @for (promotion of promotions(); track promotion.id) {
+      <li><strong>{{ promotion.title }}</strong> · {{ promotion.discountPercent }}% · {{ promotion.start }} al {{ promotion.end }}
+        <p>{{ promotion.description }}</p>
+        <button type="button" class="link danger-text" (click)="deletePromotion(promotion)">Retirar {{ promotion.title }}</button></li>
+    } @empty { <li>No hay promociones publicadas.</li> }
+  </ul>
+  } @else {
+    <p class="notice">Activa la suscripción de demostración para publicar promociones.</p>
+  }
 </section>
 
 <section class="panel">
   <h2>Horario semanal de atención</h2>
   @for (block of blocks; track $index) {
-    <div class="row">
+    <fieldset class="schedule-block">
+      <legend>Bloque {{ $index + 1 }}</legend>
+      <label>Día
       <select [name]="'day' + $index" [(ngModel)]="block.day">
         @for (d of days; track d.value) { <option [ngValue]="d.value">{{ d.name }}</option> }
       </select>
-      <input type="time" [name]="'start' + $index" [(ngModel)]="block.start">
-      <span>a</span>
-      <input type="time" [name]="'end' + $index" [(ngModel)]="block.end">
+      </label>
+      <label>Hora de inicio <input type="time" [name]="'start' + $index" [(ngModel)]="block.start"></label>
+      <label>Hora de fin <input type="time" [name]="'end' + $index" [(ngModel)]="block.end"></label>
       <button type="button" class="link danger-text" (click)="removeBlock($index)">Quitar</button>
-    </div>
+    </fieldset>
   } @empty { <p class="muted">Sin horario: los pacientes no pueden agendar contigo.</p> }
   <div class="row">
     <button type="button" class="secondary" (click)="addBlock()">Agregar bloque</button>
-    <button type="button" (click)="saveSchedule()">Publicar horario</button>
+    <button type="button" [disabled]="savingSchedule()" (click)="saveSchedule()">{{ savingSchedule() ? 'Guardando…' : 'Publicar horario' }}</button>
   </div>
   @if (scheduleMessage()) { <p role="status" class="notice">{{ scheduleMessage() }}</p> }
 </section>
@@ -56,6 +112,7 @@
   </ul>
   @if (patientRecord()) {
     <h3>Expediente de {{ patientRecord()?.patient?.name }}</h3>
-    <midoc-expediente-vista [record]="patientRecord()" />
+    <midoc-expediente-vista [record]="patientRecord()" [documents]="patientDocuments()" />
   }
 </section>
+}

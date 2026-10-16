@@ -14,6 +14,7 @@ export interface SessionUser {
 
 export interface Doctor {
   id: string;
+  userId?: string;
   name: string;
   specialty: string;
   location: string;
@@ -23,6 +24,35 @@ export interface Doctor {
   durationMin?: number;
   type?: Role;
   schedule?: ScheduleBlock[];
+  promotions?: Promotion[];
+}
+
+export interface Promotion {
+  id: string;
+  title: string;
+  description: string;
+  discountPercent: number;
+  start: string;
+  end: string;
+  active: boolean;
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  updatedAt?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  reference?: string | null;
+  createdAt: string;
+  read: boolean;
 }
 
 export interface ScheduleBlock {
@@ -70,6 +100,15 @@ export interface MedicalRecord {
   consultations: Consultation[];
 }
 
+export interface MedicalDocument {
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+  lastModified: string;
+  downloadUrl: string;
+}
+
 export interface Consent {
   doctorId: string;
   doctorName: string;
@@ -109,19 +148,25 @@ interface Session {
 const STORAGE_KEY = 'midoc.session';
 
 /** URL de la API: en localhost el backend local; en S3 la que publica Terraform en config.json. */
-export let API_URL = 'http://localhost:3000';
+export let API_URL = '';
+export let API_CONFIG_ERROR = '';
 
 export async function loadConfig(): Promise<void> {
-  if (globalThis.location.hostname === 'localhost') {
+  API_CONFIG_ERROR = '';
+  if (['localhost', '127.0.0.1', '[::1]'].includes(globalThis.location.hostname)) {
+    API_URL = 'http://localhost:3000';
     return;
   }
   try {
     const response = await fetch('config.json', { cache: 'no-store' });
-    if (response.ok) {
-      API_URL = ((await response.json()) as { apiUrl: string }).apiUrl.replace(/\/$/, '');
+    if (!response.ok) throw new Error('No fue posible cargar la configuración de la API.');
+    const config = (await response.json()) as { apiUrl?: string };
+    if (!config.apiUrl || !config.apiUrl.startsWith('https://')) {
+      throw new Error('La dirección de la API no es válida o no usa HTTPS.');
     }
-  } catch {
-    console.error('No fue posible leer config.json; se usará la API local');
+    API_URL = config.apiUrl.replace(/\/$/, '');
+  } catch (error) {
+    API_CONFIG_ERROR = error instanceof Error ? error.message : 'No fue posible iniciar MiDoc.';
   }
 }
 
@@ -154,6 +199,20 @@ export class ApiService {
     return this.call(this.http.delete<{ data: T }>(this.url(path), { headers: this.headers() }));
   }
 
+  async uploadDocument(file: File): Promise<void> {
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const types: Record<string, string> = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', dcm: 'application/dicom', dicom: 'application/dicom' };
+    const contentType = !file.type || file.type === 'application/octet-stream' ? types[extension] ?? file.type : file.type;
+    const request = await this.post<{ url: string; fields: Record<string, string> }>(
+      '/api/records/documents', { name: file.name, contentType, size: file.size }
+    );
+    const form = new FormData();
+    for (const [key, value] of Object.entries(request.fields)) form.append(key, value);
+    form.append('file', file);
+    const response = await fetch(request.url, { method: 'POST', body: form });
+    if (!response.ok) throw new Error('No se pudo guardar el archivo. Intenta nuevamente.');
+  }
+
   async login(email: string, password: string): Promise<void> {
     const result = await this.raw(this.http.post<Session>(this.url('/api/auth/login'), { email, password }));
     this.saveSession(result);
@@ -179,6 +238,7 @@ export class ApiService {
   }
 
   private url(path: string): string {
+    if (!API_URL) throw new Error(API_CONFIG_ERROR || 'La API no está configurada.');
     return `${API_URL}${path}`;
   }
 

@@ -1,35 +1,75 @@
+@if (configError) {
+  <main class="page startup-error">
+    <section class="panel" role="alert">
+      <p class="eyebrow">MiDoc</p>
+      <h1>No pudimos conectar con la aplicación.</h1>
+      <p>{{ configError }}</p>
+      <button type="button" (click)="reload()">Intentar de nuevo</button>
+    </section>
+  </main>
+} @else {
+<a class="skip-link" href="#main-content">Saltar al contenido principal</a>
 <main class="page">
   <header>
     <div class="row top">
-      <p class="eyebrow">MiDoc</p>
+      <a class="brand" href="#inicio" aria-label="MiDoc, inicio"><span class="brand-mark" aria-hidden="true">M</span><span>MiDoc</span></a>
       @if (api.user(); as user) {
-        <p class="session">{{ user.name || user.email }} · {{ user.role }}
-          <button type="button" class="link" (click)="logout()">Cerrar sesión</button></p>
+        <div class="session-tools">
+          <p class="session">{{ user.name || user.email }} · {{ user.role }}</p>
+          <button type="button" class="secondary" [attr.aria-expanded]="notificationsOpen()" aria-controls="notification-list"
+            (click)="toggleNotifications()">
+            Avisos <span>({{ unreadCount() }} sin leer)</span>
+          </button>
+          <button type="button" class="link" (click)="logout()">Cerrar sesión</button>
+        </div>
       } @else {
-        <button type="button" class="secondary" (click)="tab.set('acceso')">Iniciar sesión o crear cuenta</button>
+        <button type="button" class="secondary" (click)="navigate('acceso')">Iniciar sesión o crear cuenta</button>
       }
     </div>
-    <h1>Encuentra atención médica y controla tu expediente.</h1>
-    <p>Pacientes gratis; profesionales con suscripción de $20 USD/mes. Los datos son ficticios.</p>
+    <h1 id="inicio">Tu salud, organizada en un solo lugar.</h1>
+    <p>Encuentra profesionales, agenda una cita y comparte tu expediente sólo con quien tú decidas.</p>
+    <div class="trust-row"><span>● Expediente bajo tu control</span><span>● Acceso con consentimiento</span><span>● Datos de demostración</span></div>
   </header>
 
+  @if (notificationsOpen()) {
+    <section id="notification-list" class="panel notifications" aria-labelledby="notifications-title">
+      <div class="row"><h2 id="notifications-title">Avisos de MiDoc</h2><button type="button" class="link" (click)="loadNotifications()">Actualizar</button></div>
+      @if (notificationsMessage()) { <p role="status">{{ notificationsMessage() }}</p> }
+      <ul class="history" aria-live="polite">
+        @for (item of notifications(); track item.id) {
+          <li><button type="button" class="notification-item" [class.unread]="!item.read" (click)="markNotification(item)">
+            <strong>{{ item.title }}</strong><span>{{ item.message }}</span><time>{{ formatDateTime(item.createdAt) }}</time>
+            <span class="sr-only">{{ item.read ? 'Leído' : 'No leído' }}. Activar para marcar como leído.</span>
+          </button></li>
+        } @empty { <li>No tienes avisos todavía.</li> }
+      </ul>
+      <p class="muted">Los avisos se reciben dentro de MiDoc. El envío por correo todavía no está disponible.</p>
+    </section>
+  }
+
   <nav class="tabs" aria-label="Secciones">
-    <button type="button" [class.active]="tab() === 'buscar'" (click)="tab.set('buscar')">Buscar profesionales</button>
+    <button type="button" [attr.aria-current]="tab() === 'buscar' ? 'page' : null" [class.active]="tab() === 'buscar'" (click)="navigate('buscar')">Buscar profesionales</button>
     @if (api.isPatient()) {
-      <button type="button" [class.active]="tab() === 'citas'" (click)="tab.set('citas')">Mis citas</button>
-      <button type="button" [class.active]="tab() === 'expediente'" (click)="tab.set('expediente')">Mi expediente</button>
+      <button type="button" [attr.aria-current]="tab() === 'citas' ? 'page' : null" [class.active]="tab() === 'citas'" (click)="navigate('citas')">Mis citas</button>
+      <button type="button" [attr.aria-current]="tab() === 'expediente' ? 'page' : null" [class.active]="tab() === 'expediente'" (click)="navigate('expediente')">Mi expediente</button>
+      <button type="button" [attr.aria-current]="tab() === 'mensajes' ? 'page' : null" [class.active]="tab() === 'mensajes'" (click)="navigate('mensajes')">Mensajes</button>
     }
     @if (api.isDoctor()) {
-      <button type="button" [class.active]="tab() === 'citas'" (click)="tab.set('citas')">Agenda</button>
-      <button type="button" [class.active]="tab() === 'panel'" (click)="tab.set('panel')">Mi panel</button>
+      <button type="button" [attr.aria-current]="tab() === 'citas' ? 'page' : null" [class.active]="tab() === 'citas'" (click)="navigate('citas')">Agenda</button>
+      <button type="button" [attr.aria-current]="tab() === 'panel' ? 'page' : null" [class.active]="tab() === 'panel'" (click)="navigate('panel')">Mi panel</button>
+      <button type="button" [attr.aria-current]="tab() === 'mensajes' ? 'page' : null" [class.active]="tab() === 'mensajes'" (click)="navigate('mensajes')">Mensajes</button>
     }
   </nav>
 
+  <div id="main-content" role="region" aria-label="Contenido principal" tabindex="-1">
   @switch (tab()) {
     @case ('acceso') { <midoc-acceso (done)="signedIn()" /> }
     @case ('citas') { <midoc-citas /> }
     @case ('expediente') { <midoc-expediente /> }
     @case ('panel') { <midoc-panel-doctor /> }
-    @default { <midoc-busqueda (loginRequested)="tab.set('acceso')" /> }
+    @case ('mensajes') { <midoc-mensajes /> }
+    @default { <midoc-busqueda (loginRequested)="navigate('acceso')" /> }
   }
+  </div>
 </main>
+}

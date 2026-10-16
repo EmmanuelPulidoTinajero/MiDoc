@@ -1,0 +1,16 @@
+{
+  "testedAt": "2026-10-16T14:29:13.294338+00:00",
+  "result": "PASS",
+  "rule": "midoc-reminders",
+  "restoredSchedule": "rate(15 minutes)",
+  "automaticInvocations": [
+    {
+      "timestamp": 1792160930888,
+      "result": {
+        "job": "reminders",
+        "processedUsers": 2,
+        "status": "ok"
+      }
+    }
+  ]
+}

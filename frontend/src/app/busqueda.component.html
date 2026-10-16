@@ -1,4 +1,4 @@
-<section class="panel" aria-labelledby="search-title">
+<section class="panel" aria-labelledby="search-title" [attr.aria-busy]="searching()">
   <h2 id="search-title">Buscar profesionales</h2>
   <form class="grid-form" (ngSubmit)="search()">
     <label>Especialidad
@@ -10,31 +10,47 @@
     <label>Nombre o palabra clave
       <input name="text" [(ngModel)]="text" placeholder="Ejemplo: Ana">
     </label>
-    <button type="submit">Buscar</button>
+    <button type="submit" [disabled]="searching()">{{ searching() ? 'Buscando…' : 'Buscar' }}</button>
   </form>
-  <p role="status">{{ message() }}</p>
+  <p role="status" aria-live="polite">{{ message() }}</p>
 </section>
 
 <section aria-labelledby="results-title">
   <h2 id="results-title">Resultados</h2>
+  @if (doctors().length) {
   <div class="cards">
     @for (doctor of doctors(); track doctor.id) {
       <article class="card" [class.selected]="selected()?.id === doctor.id">
         <h3>{{ doctor.name }}</h3>
         <p>{{ doctor.specialty }} · {{ doctor.location }}</p>
         <p>Consulta: ${{ doctor.price }} MXN</p>
-        <button type="button" (click)="open(doctor)">Ver perfil y agendar</button>
+        @for (promotion of doctor.promotions ?? []; track promotion.id) {
+          <p class="promotion-badge"><strong>{{ promotion.discountPercent }}% de descuento</strong> · {{ promotion.title }}</p>
+        }
+        <button type="button" [disabled]="openingDoctor()" (click)="open(doctor)">{{ openingDoctor() ? 'Abriendo perfil…' : 'Ver perfil y agendar' }}</button>
       </article>
     }
   </div>
+  } @else if (searching()) {
+    <p class="panel muted">Buscando profesionales disponibles…</p>
+  } @else if (searched()) {
+    <p class="panel muted">No encontramos profesionales con esos filtros. Prueba otro nombre, especialidad o ciudad.</p>
+  } @else {
+    <p class="panel muted">Completa uno o más filtros y pulsa Buscar. También puedes consultar todos los profesionales sin filtros.</p>
+  }
 </section>
 
 @if (selected(); as doctor) {
   <section class="panel" aria-labelledby="doctor-title">
     <h2 id="doctor-title">{{ doctor.name }}</h2>
-    <p class="muted">{{ doctor.type === 'CLINICA' ? 'Clínica' : 'Doctor(a)' }} · {{ doctor.specialty }} · {{ doctor.location }}{{ doctor.city && doctor.city !== doctor.location ? ', ' + doctor.city : '' }}</p>
+    <p class="muted">{{ doctor.type === 'CLINICA' ? 'Consultorio / clínica / hospital' : 'Doctor(a)' }} · {{ doctor.specialty }} · {{ doctor.location }}{{ doctor.city && doctor.city !== doctor.location ? ', ' + doctor.city : '' }}</p>
     @if (doctor.description) { <p>{{ doctor.description }}</p> }
     <p>Consulta de {{ doctor.durationMin }} minutos: <strong>${{ doctor.price }} MXN</strong></p>
+    @for (promotion of doctor.promotions ?? []; track promotion.id) {
+      <p class="promotion-badge"><strong>Promoción: {{ promotion.title }} ({{ promotion.discountPercent }}% de descuento)</strong>
+        @if (promotion.description) { · {{ promotion.description }} }
+        <span> Vigente del {{ promotion.start }} al {{ promotion.end }}. Consulta condiciones con el profesional.</span></p>
+    }
 
     <h3>Horario semanal</h3>
     <ul class="compact">
@@ -57,11 +73,11 @@
     @if (slotsMessage()) { <p class="muted">{{ slotsMessage() }}</p> }
     <div class="slots">
       @for (slot of slots(); track slot) {
-        <button type="button" class="secondary" (click)="book(slot)">{{ formatTime(slot) }}</button>
+        <button type="button" class="secondary" [disabled]="booking()" (click)="book(slot)">{{ booking() ? 'Reservando…' : formatTime(slot) }}</button>
       }
     </div>
     @if (api.isPatient()) {
-      <p><button type="button" class="link" (click)="grantAccess()">Dar acceso a mi expediente a este profesional</button></p>
+      <p><button type="button" class="link" [disabled]="updatingConsent()" (click)="grantAccess()">{{ updatingConsent() ? 'Actualizando permiso…' : 'Autorizar a ' + doctor.name + ' para consultar mi expediente' }}</button></p>
     }
     @if (bookingMessage()) { <p role="status" class="notice">{{ bookingMessage() }}</p> }
   </section>

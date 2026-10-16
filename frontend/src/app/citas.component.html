@@ -5,14 +5,16 @@
   </div>
   @if (message()) { <p role="status" class="notice">{{ message() }}</p> }
 
+  <div class="table-scroll" role="region" aria-label="Lista de citas" tabindex="0">
   <table>
+    <caption class="sr-only">Citas programadas y su estado actual</caption>
     <thead>
       <tr>
-        <th>Fecha y hora</th>
-        <th>{{ api.isDoctor() ? 'Paciente' : 'Profesional' }}</th>
-        <th>Motivo</th>
-        <th>Estado</th>
-        <th>Acciones</th>
+        <th scope="col">Fecha y hora</th>
+        <th scope="col">{{ api.isDoctor() ? 'Paciente' : 'Profesional' }}</th>
+        <th scope="col">Motivo</th>
+        <th scope="col">Estado</th>
+        <th scope="col">Acciones</th>
       </tr>
     </thead>
     <tbody>
@@ -23,6 +25,13 @@
           <td>{{ a.reason || '—' }}</td>
           <td><span class="badge" [attr.data-status]="a.status">{{ a.status }}</span></td>
           <td class="actions">
+            @if (api.isDoctor() && a.status === 'PENDIENTE' && canChange(a)) {
+              <button type="button" class="secondary" [disabled]="updatingId() === a.id" (click)="changeStatus(a, 'CONFIRMADA')">Confirmar</button>
+            }
+            @if (canChange(a)) {
+              <button type="button" class="danger" [disabled]="updatingId() === a.id" (click)="changeStatus(a, 'CANCELADA')">Cancelar</button>
+              <button type="button" class="secondary" [disabled]="updatingId() === a.id" (click)="beginReschedule(a)">Reprogramar</button>
+            }
             @if (canAttend(a)) {
               <button type="button" (click)="attend(a)">Registrar consulta</button>
             }
@@ -33,13 +42,36 @@
       }
     </tbody>
   </table>
+  </div>
 </section>
+
+@if (rescheduling(); as appointment) {
+  <section class="panel" aria-labelledby="reschedule-title">
+    <h2 id="reschedule-title">Reprogramar cita</h2>
+    <p>Elige una nueva fecha para tu cita con {{ api.isDoctor() ? appointment.patientName : appointment.doctorName }}.</p>
+    <div class="row reschedule-controls">
+      <label>Nueva fecha <input type="date" name="rescheduleDate" [(ngModel)]="rescheduleDate" [min]="minDate" (change)="loadRescheduleSlots()"></label>
+      <button type="button" class="secondary" (click)="loadRescheduleSlots()">Consultar horarios</button>
+    </div>
+    <p role="status" aria-live="polite">{{ rescheduleMessage() }}</p>
+    @if (rescheduleSlots().length) {
+      <label>Horario disponible
+        <select name="rescheduleSlot" [(ngModel)]="selectedSlot" required>
+          <option value="">Selecciona una hora</option>
+          @for (slot of rescheduleSlots(); track slot) { <option [value]="slot">{{ formatTime(slot) }}</option> }
+        </select>
+      </label>
+      <div class="row"><button type="button" [disabled]="!selectedSlot || savingReschedule()" (click)="saveReschedule()">{{ savingReschedule() ? 'Guardando…' : 'Confirmar nueva fecha' }}</button>
+        <button type="button" class="secondary" (click)="rescheduling.set(null)">Cerrar</button></div>
+    }
+  </section>
+}
 
 @if (attending(); as a) {
   <section class="panel">
     <h2>Consulta de {{ a.patientName }}</h2>
     <p class="muted">{{ formatDateTime(a.dateTime) }} · Requiere que el paciente te haya dado acceso a su expediente.</p>
-    <form class="stack" (ngSubmit)="saveConsultation()">
+    <form class="stack" #consultationForm="ngForm" (ngSubmit)="saveConsultation()">
       <label>Diagnóstico
         <textarea name="diagnosis" [(ngModel)]="diagnosis" required minlength="3" rows="3"></textarea>
       </label>
@@ -50,7 +82,7 @@
         <textarea name="notes" [(ngModel)]="notes" rows="2"></textarea>
       </label>
       <div class="row">
-        <button type="submit">Guardar consulta y generar receta</button>
+        <button type="submit" [disabled]="savingConsultation() || consultationForm.invalid">{{ savingConsultation() ? 'Guardando…' : 'Guardar consulta y generar receta' }}</button>
         <button type="button" class="secondary" (click)="attending.set(null)">Cancelar</button>
       </div>
     </form>

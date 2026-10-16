@@ -1,0 +1,233 @@
+{
+  "testedAt": "2026-10-16T14:29:24.936699+00:00",
+  "apiUrl": "https://4otc5sejki.execute-api.us-east-1.amazonaws.com",
+  "result": "PASS",
+  "checks": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/register",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/register",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/subscriptions/pay",
+      "status": 402
+    },
+    {
+      "method": "POST",
+      "path": "/api/subscriptions/pay",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/api/doctor/schedule",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/doctors/f24b0db0-332a-40e7-b6fa-c881eaad74ae/availability?date=2026-10-16",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/appointments",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/appointments",
+      "status": 409
+    },
+    {
+      "method": "PUT",
+      "path": "/api/appointments/ba551338-08e6-484c-a90a-ce492cf238dc/status",
+      "status": 403
+    },
+    {
+      "method": "PUT",
+      "path": "/api/appointments/ba551338-08e6-484c-a90a-ce492cf238dc/status",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/appointments/ba551338-08e6-484c-a90a-ce492cf238dc/reschedule",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/appointments/ba551338-08e6-484c-a90a-ce492cf238dc/reschedule",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/appointments",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "/api/appointments/3dd29f0f-77c8-449e-8e55-74f3a94f2185/status",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/records",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/records?patientId=61c0c246-c635-4a8a-8c3d-4699e8e8bad3",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/consents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/records?patientId=61c0c246-c635-4a8a-8c3d-4699e8e8bad3",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/consents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/records?patientId=61c0c246-c635-4a8a-8c3d-4699e8e8bad3",
+      "status": 403
+    },
+    {
+      "method": "POST",
+      "path": "/api/consents",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/records/documents",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/records/documents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/records/documents?patientId=61c0c246-c635-4a8a-8c3d-4699e8e8bad3",
+      "status": 200
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/records/documents/31b32e0d-ae94-4c78-b6ab-f75caf723bb7",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/messages",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/messages/61c0c246-c635-4a8a-8c3d-4699e8e8bad3",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/messages",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/doctor/inventory",
+      "status": 201
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/doctor/inventory/391de448-c489-46be-a4ce-7f02ddf3f7ff",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/doctor/promotions",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/doctors/f24b0db0-332a-40e7-b6fa-c881eaad74ae",
+      "status": 200
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/doctor/promotions/a9ddc274-885e-451d-9ef7-1bf599e60351",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/consultations",
+      "status": 409
+    },
+    {
+      "method": "GET",
+      "path": "/api/notifications",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/consultations",
+      "status": 409
+    },
+    {
+      "method": "GET",
+      "path": "/api/prescriptions/2f411f11-9b75-42f4-b874-1a2eed13e9df",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/records",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/appointments/ba551338-08e6-484c-a90a-ce492cf238dc",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/consents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/records?patientId=61c0c246-c635-4a8a-8c3d-4699e8e8bad3",
+      "status": 403
+    },
+    {
+      "method": "PUT",
+      "path": "/api/doctor/schedule",
+      "status": 200
+    }
+  ],
+  "patientId": "61c0c246-c635-4a8a-8c3d-4699e8e8bad3",
+  "doctorId": "f24b0db0-332a-40e7-b6fa-c881eaad74ae",
+  "appointmentId": "ba551338-08e6-484c-a90a-ce492cf238dc",
+  "prescriptionId": "2f411f11-9b75-42f4-b874-1a2eed13e9df",
+  "syntheticData": true,
+  "cloudFlows": [
+    1,
+    2,
+    3
+  ],
+  "consultationBrowser": true
+}
