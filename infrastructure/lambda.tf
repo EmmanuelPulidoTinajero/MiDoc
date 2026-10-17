@@ -14,6 +14,7 @@ resource "terraform_data" "lambda_dependencies" {
     filemd5("${path.module}/../backend/src/reglas.py"),
     filemd5("${path.module}/../backend/src/servicios_aws.py"),
     filemd5("${path.module}/../backend/src/lambda_function.py"),
+    filemd5("${path.module}/../backend/src/metricas.py"),
     filemd5("${path.module}/../backend/src/schema.sql"),
   ]
 
