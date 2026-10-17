@@ -91,5 +91,53 @@ class Habilitacion(unittest.TestCase):
             metricas.registrar_peticion("GET", "/health", 200, 3)
 
 
+class MetricasEnLambda(unittest.TestCase):
+    """El handler de Lambda emite exactamente un documento EMF por petición HTTP."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from src import app  # noqa: F401  (agrega src/ a sys.path como en producción)
+        from src.lambda_function import handler
+        cls.handler = staticmethod(handler)
+
+    def invocar(self, evento):
+        salida = io.StringIO()
+        with patch.dict(os.environ, {"METRICS_ENABLED": "true", "NODE_ENV": "test"}), \
+                contextlib.redirect_stdout(salida):
+            respuesta = self.handler(evento, None)
+        lineas = [json.loads(linea) for linea in salida.getvalue().splitlines() if linea.startswith("{")]
+        return respuesta, lineas
+
+    def test_health_emite_latencia_y_cero_errores(self):
+        respuesta, lineas = self.invocar({"httpMethod": "GET", "path": "/health"})
+        self.assertEqual(respuesta["statusCode"], 200)
+        self.assertEqual(len(lineas), 1)
+        self.assertEqual(lineas[0]["ServerErrors"], 0)
+        self.assertGreaterEqual(lineas[0]["RequestLatencyMs"], 0)
+
+    def test_login_rechazado_cuenta_como_login_fallido(self):
+        evento = {"httpMethod": "POST", "path": "/api/auth/login",
+                  "body": json.dumps({"email": "paciente@midoc.local", "password": "incorrecta"})}
+        respuesta, lineas = self.invocar(evento)
+        self.assertEqual(respuesta["statusCode"], 401)
+        self.assertEqual(lineas[0]["LoginFailures"], 1)
+
+    def test_login_correcto_no_cuenta_como_fallo(self):
+        evento = {"httpMethod": "POST", "path": "/api/auth/login",
+                  "body": json.dumps({"email": "paciente@midoc.local", "password": "paciente-demo"})}
+        respuesta, lineas = self.invocar(evento)
+        self.assertEqual(respuesta["statusCode"], 200)
+        self.assertNotIn("LoginFailures", lineas[0])
+
+    def test_sin_metricas_fuera_de_produccion_la_respuesta_no_cambia(self):
+        salida = io.StringIO()
+        with patch.dict(os.environ, {"NODE_ENV": "test"}, clear=False), contextlib.redirect_stdout(salida):
+            os.environ.pop("METRICS_ENABLED", None)
+            respuesta = self.handler({"httpMethod": "GET", "path": "/health"}, None)
+        self.assertEqual(respuesta["statusCode"], 200)
+        self.assertEqual(salida.getvalue(), "")
+
+
 if __name__ == "__main__":
     unittest.main()
