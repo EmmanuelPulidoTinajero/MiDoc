@@ -1,10 +1,12 @@
 import base64
 import binascii
 import json
+import time
 
 from app import handle, _response
 import app
 import flujos
+import metricas
 
 
 def handler(event, _context):
@@ -29,4 +31,7 @@ def handler(event, _context):
             return _response(400, {"error": "El cuerpo debe contener JSON válido"})
     else:
         body = {}
-    return handle(method, path, event.get("headers", {}), body)
+    inicio = time.perf_counter()
+    respuesta = handle(method, path, event.get("headers", {}), body)
+    metricas.registrar_peticion(method, path, respuesta["statusCode"], (time.perf_counter() - inicio) * 1000)
+    return respuesta
