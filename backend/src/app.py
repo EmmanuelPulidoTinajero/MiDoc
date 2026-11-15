@@ -100,8 +100,15 @@ def _database_ready() -> bool:
 
 
 def _audit_record_access(patient_id: str, actor_id: str) -> None:
-    """Escribe un evento complementario en DynamoDB; PostgreSQL conserva la bitácora transaccional."""
-    servicios_aws.registrar_acceso(patient_id, actor_id)
+    """Escribe un evento complementario en DynamoDB; PostgreSQL conserva la bitácora transaccional.
+
+    La bitácora de DynamoDB complementa, no autoriza: si falla, la lectura del expediente ya
+    autorizada sigue adelante y el error queda en los logs de CloudWatch.
+    """
+    try:
+        servicios_aws.registrar_acceso(patient_id, actor_id)
+    except Exception as error:  # noqa: BLE001 - la auditoría nunca debe bloquear la lectura
+        logger.warning("auditoria_dynamodb_fallida paciente=%s actor=%s error=%s", patient_id, actor_id, error)
 
 
 def _query(sql: str, params: tuple = (), fetch: bool = True):
