@@ -22,16 +22,18 @@ def handler(event, _context):
     query = event.get("rawQueryString", "")
     if query:
         path = f"{path}?{query}"
+    inicio = time.perf_counter()
     body = event.get("body")
+    respuesta = None
     if body:
         try:
             decoded = base64.b64decode(body, validate=True) if event.get("isBase64Encoded") else body
             body = json.loads(decoded)
         except (ValueError, TypeError, UnicodeDecodeError, binascii.Error):
-            return _response(400, {"error": "El cuerpo debe contener JSON válido"})
+            respuesta = _response(400, {"error": "El cuerpo debe contener JSON válido"})
     else:
         body = {}
-    inicio = time.perf_counter()
-    respuesta = handle(method, path, event.get("headers", {}), body)
+    if respuesta is None:
+        respuesta = handle(method, path, event.get("headers", {}), body)
     metricas.registrar_peticion(method, path, respuesta["statusCode"], (time.perf_counter() - inicio) * 1000)
     return respuesta

@@ -76,9 +76,9 @@ def construir_registro(valores, marca_ms=None):
 
 
 def registrar_peticion(method, path, status, latencia_ms):
-    if not habilitadas():
-        return
     try:
+        if not habilitadas():
+            return
         registro = construir_registro(de_peticion(method, path, status, latencia_ms))
         print(json.dumps(registro, separators=(",", ":")), flush=True)
     except Exception:  # las métricas nunca deben tumbar la API
