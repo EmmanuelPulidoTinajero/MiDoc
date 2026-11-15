@@ -81,6 +81,8 @@ Hoy el proyecto tiene **dos colores de foco peleándose** (`styles.css:60` con `
 | `--tracking-display` | `-0.01em` | Serif de tamaño grande |
 | `--tracking-label` | `0.06em` | Versalitas de etiqueta |
 
+Los interlineados de la escala se publican como tokens para que ningún componente los escriba a mano: `--leading-xs` `1.4`, `--leading-sm` `1.5`, `--leading-base` `1.6`, `--leading-md` `1.6`, `--leading-lg` `1.45`, `--leading-xl` `1.3`, `--leading-2xl` `1.2`, `--leading-3xl` `1.1`. Son exactamente los valores de la columna «Valor» de la tabla anterior.
+
 Base 16 px con cuerpo de 15 px: la densidad de un panel clínico, no la de una landing.
 
 ## Espaciado
