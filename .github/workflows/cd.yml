@@ -1,0 +1,204 @@
+name: MiDoc CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      payment_mode:
+        description: "Stripe payment mode for deployment"
+        required: true
+        type: choice
+        options:
+          - test
+          - live
+        default: test
+      enable_monitoring:
+        description: "Provision CloudWatch alarms, SNS topic, dashboard, and Logs Insights queries"
+        required: true
+        type: boolean
+        default: true
+      run_smoke:
+        description: "Run post-deploy HTTP and CloudWatch smoke validation"
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: midoc-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      can_deploy: ${{ steps.guard.outputs.can_deploy }}
+      payment_mode: ${{ steps.guard.outputs.payment_mode }}
+      enable_monitoring: ${{ steps.guard.outputs.enable_monitoring }}
+      run_smoke: ${{ steps.guard.outputs.run_smoke }}
+    steps:
+      - name: Validate AWS Academy Learner Lab credentials & Stripe mode
+        id: guard
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          TF_VAR_jwt_secret: ${{ secrets.TF_VAR_jwt_secret }}
+          TF_VAR_stripe_secret_key: ${{ secrets.TF_VAR_stripe_secret_key }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PAYMENT_MODE: ${{ inputs.payment_mode || 'test' }}
+          INPUT_ENABLE_MONITORING: ${{ (github.event_name != 'workflow_dispatch' || inputs.enable_monitoring) && 'true' || 'false' }}
+          INPUT_RUN_SMOKE: ${{ (github.event_name != 'workflow_dispatch' || inputs.run_smoke) && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          PAYMENT_MODE="${INPUT_PAYMENT_MODE:-test}"
+          echo "payment_mode=${PAYMENT_MODE}" >> "$GITHUB_OUTPUT"
+          echo "enable_monitoring=${INPUT_ENABLE_MONITORING:-true}" >> "$GITHUB_OUTPUT"
+          echo "run_smoke=${INPUT_RUN_SMOKE:-true}" >> "$GITHUB_OUTPUT"
+
+          MISSING=()
+          [ -z "${AWS_ACCESS_KEY_ID:-}" ] && MISSING+=("AWS_ACCESS_KEY_ID")
+          [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] && MISSING+=("AWS_SECRET_ACCESS_KEY")
+          [ -z "${AWS_SESSION_TOKEN:-}" ] && MISSING+=("AWS_SESSION_TOKEN")
+          [ -z "${TF_VAR_jwt_secret:-}" ] && MISSING+=("TF_VAR_jwt_secret")
+
+          if [ "${#MISSING[@]}" -gt 0 ]; then
+            MSG="Missing required repository secrets for AWS Academy Learner Lab deploy: ${MISSING[*]}."
+            {
+              echo "### MiDoc CD Preflight"
+              echo "$MSG"
+              echo ""
+              echo "Configure ephemeral AWS Academy credentials (\`AWS_ACCESS_KEY_ID\`, \`AWS_SECRET_ACCESS_KEY\`, \`AWS_SESSION_TOKEN\`) and \`TF_VAR_jwt_secret\` in GitHub Repository Secrets before dispatching a cloud deploy."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::$MSG"
+              exit 1
+            fi
+            echo "::warning::$MSG Skipping cloud deployment on push."
+            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$PAYMENT_MODE" = "live" ] && [ -z "${TF_VAR_stripe_secret_key:-}" ]; then
+            echo "::error::payment_mode='live' requires non-empty TF_VAR_stripe_secret_key starting with sk_live_."
+            exit 1
+          fi
+
+          if [ -n "${TF_VAR_stripe_secret_key:-}" ]; then
+            if [ "$PAYMENT_MODE" = "test" ] && [[ "$TF_VAR_stripe_secret_key" != sk_test_* ]]; then
+              echo "::error::payment_mode='test' requires TF_VAR_stripe_secret_key starting with sk_test_."
+              exit 1
+            fi
+            if [ "$PAYMENT_MODE" = "live" ] && [[ "$TF_VAR_stripe_secret_key" != sk_live_* ]]; then
+              echo "::error::payment_mode='live' requires TF_VAR_stripe_secret_key starting with sk_live_."
+              exit 1
+            fi
+          fi
+
+          if ! ACCOUNT_ID=$(aws sts get-caller-identity --region us-east-1 --query 'Account' --output text 2>/dev/null); then
+            echo "::error::AWS Academy Learner Lab session token expired or invalid — refresh AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN secrets and re-run."
+            exit 1
+          fi
+
+          echo "Verified AWS STS caller identity for account: $ACCOUNT_ID"
+          echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: preflight
+    if: needs.preflight.outputs.can_deploy == 'true'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
+      TF_VAR_jwt_secret: ${{ secrets.TF_VAR_jwt_secret }}
+      TF_VAR_payment_mode: ${{ needs.preflight.outputs.payment_mode }}
+      TF_VAR_stripe_secret_key: ${{ secrets.TF_VAR_stripe_secret_key }}
+      TF_VAR_stripe_webhook_secret: ${{ secrets.TF_VAR_stripe_webhook_secret }}
+      TF_VAR_enable_monitoring: ${{ needs.preflight.outputs.enable_monitoring }}
+      TF_VAR_alert_email: ${{ secrets.TF_VAR_alert_email }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Terraform init
+        working-directory: infrastructure
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+        run: |
+          if [ -n "${TF_STATE_BUCKET:-}" ]; then
+            cat > backend_override.tf <<'EOF'
+          terraform {
+            backend "s3" {}
+          }
+          EOF
+            terraform init -input=false \
+              -backend-config="bucket=${TF_STATE_BUCKET}" \
+              -backend-config="key=midoc/terraform.tfstate" \
+              -backend-config="region=us-east-1"
+          else
+            echo "::warning::TF_STATE_BUCKET secret is not set; using local runner state."
+            terraform init -input=false
+          fi
+
+      - name: Terraform apply
+        working-directory: infrastructure
+        run: terraform apply -auto-approve -input=false
+
+      - name: Publish frontend & runtime config.json
+        run: python infrastructure/publish_frontend.py --payment-mode "${{ needs.preflight.outputs.payment_mode }}"
+
+      - name: Smoke validation
+        if: needs.preflight.outputs.run_smoke == 'true'
+        run: |
+          set -euo pipefail
+          API_URL=$(terraform -chdir=infrastructure output -raw api_url)
+          FRONTEND_URL=$(terraform -chdir=infrastructure output -raw frontend_url)
+          CONFIG_URL="${FRONTEND_URL%/index.html}/config.json"
+
+          curl -fsS --retry 3 --retry-delay 5 --retry-connrefused "${API_URL}/health" >/dev/null
+          curl -fsS --retry 3 --retry-delay 5 --retry-connrefused "${API_URL}/api/doctors" >/dev/null
+          curl -fsS --retry 3 --retry-delay 5 --retry-connrefused "${FRONTEND_URL}" >/dev/null
+
+          CONFIG_JSON=$(curl -fsS --retry 3 --retry-delay 5 --retry-connrefused "${CONFIG_URL}")
+          python -c "import json, sys; cfg=json.loads(sys.argv[1]); assert cfg.get('apiUrl', '').startswith('https://') and cfg.get('paymentMode') in {'test','live'}" "$CONFIG_JSON"
+
+          if [ "${{ needs.preflight.outputs.enable_monitoring }}" = "true" ]; then
+            PROJECT_PREFIX="${TF_VAR_project_name:-midoc}"
+            aws cloudwatch describe-alarms --region us-east-1 --alarm-name-prefix "${PROJECT_PREFIX}-" --query 'MetricAlarms[0].AlarmName' --output text | grep -q "^${PROJECT_PREFIX}-"
+            aws logs describe-log-groups --region us-east-1 --log-group-name-prefix "/aws/lambda/${PROJECT_PREFIX}-api" --query 'logGroups[].logGroupName' --output text | tr '\t' '\n' | grep -qx "/aws/lambda/${PROJECT_PREFIX}-api"
+            aws logs describe-log-groups --region us-east-1 --log-group-name-prefix "/aws/apigateway/${PROJECT_PREFIX}-http-api" --query 'logGroups[].logGroupName' --output text | tr '\t' '\n' | grep -qx "/aws/apigateway/${PROJECT_PREFIX}-http-api"
+          fi
+
+          {
+            echo "### MiDoc CD Deployment Summary"
+            echo "- **API URL**: ${API_URL}"
+            echo "- **Frontend URL**: ${FRONTEND_URL}"
+            echo "- **Payment Mode**: ${{ needs.preflight.outputs.payment_mode }}"
+            echo "- **Smoke Checks**: PASSED"
+          } >> "$GITHUB_STEP_SUMMARY"

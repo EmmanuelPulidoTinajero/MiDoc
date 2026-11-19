@@ -1,20 +1,20 @@
-# Despliegue de fase 2 · AWS Academy
+# Despliegue Reproducible de MiDoc (Fase 3 · AWS Academy)
 
-## Requisitos
+## Requisitos previos
 
-- Learner Lab activo y AWS CLI autenticado como `voclabs` en `us-east-1`.
-- El rol existente `LabRole` debe poder ejecutar Lambda, leer Secrets Manager, registrar eventos en DynamoDB, usar S3 y conectarse a RDS. Terraform no crea roles ni modifica políticas.
-- Terraform 1.6 o posterior, Python 3.12 o posterior con `pip`, Node.js 24.15+ dentro de la rama 24.
+- Sesión activa de AWS Academy Learner Lab y AWS CLI autenticado como `voclabs` en `us-east-1`.
+- Rol existente `LabRole` en la cuenta con permisos para Lambda, Secrets Manager, DynamoDB, S3, RDS, CloudWatch y EventBridge (Terraform no crea roles IAM).
+- Herramientas locales: **Terraform >= 1.6**, **Python >= 3.12** con `pip`, **Node.js >= 24.15** (rama 24; Angular 22 no admite Node 20).
 
-Comprueba la identidad antes de desplegar:
+Comprueba la identidad activa antes de desplegar:
 
 ```powershell
 aws sts get-caller-identity
 ```
 
-Tarea 2 documenta la restricción de Cognito User Pools. Las pruebas previas observaron denegaciones al consultar CloudFront y políticas IAM; no se comprobó la creación de una distribución. El frontend usa el endpoint REST HTTPS de S3 con /index.html, sin necesitar CloudFront. API y documentos también usan HTTPS. EventBridge ejecuta recordatorios cada 15 minutos con permiso de invocación limitado a la Lambda existente.
+---
 
-## Preparación
+## Preparación y configuración (`terraform.tfvars`)
 
 ```powershell
 npm ci --prefix frontend
@@ -22,9 +22,26 @@ npm run build --prefix frontend
 Copy-Item infrastructure/terraform.tfvars.example infrastructure/terraform.tfvars
 ```
 
-Edita `infrastructure/terraform.tfvars` localmente y reemplaza el `jwt_secret` de ejemplo por un valor aleatorio largo. El archivo está ignorado por Git. No muestres el valor ni lo compartas. La entrada de Terraform lo marca sensible, pero el estado local también contiene el secreto: protege `infrastructure/terraform.tfstate` y sus respaldos. En un equipo de trabajo se debe configurar un backend remoto cifrado y con acceso restringido.
+Edita `infrastructure/terraform.tfvars` localmente (archivo ignorado por Git) sin exponer secretos en commits ni registros:
 
-## Plan y despliegue
+| Variable | Valor por defecto | Descripción |
+| --- | --- | --- |
+| `jwt_secret` | *(requerido)* | Secreto aleatorio largo para firmar JWT HS256 (mínimo 32 caracteres recomendados). |
+| `payment_mode` | `"test"` | `"test"` (Stripe Sandbox `sk_test_...`) o `"live"` (Producción `sk_live_...`). |
+| `stripe_secret_key` | `""` | Llave secreta de Stripe. Terraform valida el prefijo según `payment_mode` (`sk_test_` vs `sk_live_`). |
+| `stripe_webhook_secret` | `""` | Secreto `whsec_...` del endpoint `/api/webhooks/stripe` (opcional si sólo se confirma en retorno). |
+| `stripe_price_amount_cents` | `2000` | Monto de la suscripción mensual en centavos USD (`2000` = $20.00 USD). |
+| `enable_nat_gateway` | `true` | Aprovisiona 2 subredes privadas (`172.31.96.0/20`, `172.31.112.0/20`), EIP y NAT Gateway para salida HTTPS hacia `api.stripe.com`. |
+| `enable_monitoring` | `true` | Crea Log Groups (14 días), access logs API GW, SNS, 10 alarmas, 4 Logs Insights queries y dashboard `midoc-estado`. |
+| `alert_email` | `""` | Correo electrónico opcional para suscribirse al tópico SNS `${project}-alerts`. |
+| `allow_demo_seed` | `false` | Debe permanecer en `false` en producción para no sembrar cuentas ni suscripciones demo. |
+| `delete_medical_bucket_on_destroy` | `true` | Si es `true`, `terraform destroy` vacía y elimina también el bucket privado de documentos clínicos. |
+
+Para alternar entre modo prueba y producción antes de desplegar, consulta la guía detallada en [PAGOS-STRIPE.md](PAGOS-STRIPE.md).
+
+---
+
+## Plan y despliegue con Terraform
 
 ```powershell
 terraform -chdir=infrastructure init
@@ -34,16 +51,33 @@ terraform -chdir=infrastructure plan -var-file=terraform.tfvars
 terraform -chdir=infrastructure apply -var-file=terraform.tfvars
 ```
 
-El plan crea RDS PostgreSQL cifrado (`db.t3.micro`, 20 GB), API Gateway, Lambda en la VPC, tabla DynamoDB, Secrets Manager, endpoints de VPC para Secrets Manager/S3/DynamoDB, bucket S3 del frontend y bucket S3 privado de documentos. RDS, Secrets Manager y el endpoint interface tienen cargos por tiempo y almacenamiento; revisa los precios del laboratorio antes de dejar recursos encendidos.
+El plan aprovisiona:
+- **Red y cómputo:** 2 subredes privadas, EIP + NAT Gateway, endpoints privados VPC (Secrets Manager, S3, DynamoDB), API Gateway HTTP v2 y Lambda Python 3.12 (`midoc-api`, empaquetado por `infrastructure/build_lambda.py` en `backend/.lambda-build` con `psycopg2-binary` Linux).
+- **Datos y secretos:** RDS PostgreSQL 16.13 privado/cifrado (`db.t3.micro`, 20 GB), tabla DynamoDB `application_events`, secreto `midoc-application-*` y secreto `midoc-stripe-*` (ambos con `recovery_window_in_days = 0`), más dos buckets S3 (`s3_frontend.py` y `s3_medical.py`).
+- **Automatización y monitoreo:** Regla EventBridge `midoc-reminders` (`rate(15 minutes)`), Log Groups `/aws/lambda/midoc-api` y `/aws/apigateway/midoc-http-api`, tópico SNS `midoc-alerts`, 10 alarmas CloudWatch, 4 consultas Logs Insights y dashboard `midoc-estado`.
 
-Terraform usa `infrastructure/build_lambda.py` para construir las fuentes Python y dependencias Linux/Python 3.12 en `backend/.lambda-build`, sin instalar binarios dentro de `backend/src`. Empaqueta el resultado en `backend/lambda-package.zip`. El pipeline requiere `pip` y acceso al índice de paquetes durante el primer despliegue.
+> **Importante sobre cambios sólo de frontend:** Para actualizar el frontend compilado sobre el bucket existente sin destruir el bucket, ejecuta:
+> ```powershell
+> npm run build --prefix frontend
+> python infrastructure/publish_frontend.py --payment-mode test
+> ```
+> No reemplaces el recurso `terraform_data.frontend_bucket`, ya que su provisioner `destroy` vacía y elimina el bucket.
 
-El script de S3 usa AWS CLI porque la política del Learner Lab deniega `s3:GetBucketObjectLockConfiguration` al provider AWS. El bucket de documentos tiene bloqueo de acceso público, cifrado AES-256 y CORS limitado a los orígenes de MiDoc/local. El bucket del frontend sólo contiene archivos estáticos públicos.
+---
 
-## Verificación funcional
+## Verificación local y en nube
 
-Para actualizar el frontend sobre el mismo bucket, compila y ejecuta `python infrastructure/publish_frontend.py`. Terraform no detecta automáticamente cambios de `dist/`. El script elige `dist/midoc-frontend/browser`, preserva `config.json` durante el sync y lee las salidas del estado. No reemplaces `terraform_data.frontend_bucket` para publicar cambios: su provisioner destroy vacía y elimina el bucket.
+### 1. Suites automatizadas locales (sin AWS activo)
+```powershell
+python -m unittest discover -s backend/test -p "test_*.py"          # 101 pruebas unitarias/integración
+npx --prefix frontend tsc -p frontend/tsconfig.app.json --noEmit
+npx --prefix frontend tsc -p frontend/tsconfig.spec.json --noEmit
+npm --prefix frontend test                                          # 20 archivos / 57 pruebas Vitest
+npm --prefix frontend run e2e                                       # 8 pruebas Playwright (desktop + mobile)
+python tests/e2e/run_e2e.py --mode self-test --tier all             # 197 casos en 4 niveles (o --mode live --target local --stripe-mode mock)
+```
 
+### 2. Verificación en vivo tras `terraform apply`
 ```powershell
 $api = terraform -chdir=infrastructure output -raw api_url
 $site = terraform -chdir=infrastructure output -raw frontend_url
@@ -51,15 +85,30 @@ Invoke-RestMethod "$api/health"
 Invoke-RestMethod "$api/api/doctors"
 Start-Process $site
 ```
+Y para ejecutar la batería E2E completa contra la nube real (incluyendo Stripe modo prueba y CloudWatch):
+```powershell
+python tests/e2e/run_e2e.py --mode live --target cloud --stripe-mode live_cloud --with-browser --tier all
+```
+Consulta también la guía en [../tests/e2e/README.md](../tests/e2e/README.md) y el registro histórico de Fase 2 en [DEPLOYMENT-TEST.md](DEPLOYMENT-TEST.md).
 
-Sigue el checklist de [DEPLOYMENT-TEST.md](DEPLOYMENT-TEST.md). Comprueba en la consola de AWS que RDS esté `available` y Lambda `Active`; no imprimas credenciales, secretos ni tokens en una grabación.
+---
 
-## Persistencia y limpieza
+## Persistencia, migraciones y destrucción total (`terraform destroy`)
 
-En el primer acceso de cada entorno Lambda se ejecuta `backend/src/schema.sql`. Los archivos de `backend/migrations/` son históricos y no cubren las ampliaciones recientes; no hay un ejecutor de migraciones versionadas. Se desplegaron el bloqueo de inicialización, la inserción semilla sólo si falta un periodo y la conexión PostgreSQL con TLS obligatorio. Los periodos duplicados ya existentes no se eliminaron.
+- **Esquema y migraciones versionadas:** `backend/migrations/` contiene `001_initial.sql`, `002_ampliacion_flujos.sql`, `003_inventario_promociones_avisos_mensajes.sql` y `004_stripe_suscripcion_y_perfil.sql`, mantenidas en paridad 1:1 con `backend/src/schema.sql` y validadas por `backend/test/test_migraciones.py`.
+- **Destrucción automática y verificación de cero recursos:**
+  - Con `delete_medical_bucket_on_destroy = true` (valor por defecto), `terraform destroy` ejecuta `s3_frontend.py destroy` y `s3_medical.py destroy` (abortando cargas multiparte y borrando versiones/marcadores), elimina NAT Gateway, EIP, subredes privadas, RDS, API Gateway, Lambda, DynamoDB, CloudWatch, SNS y secretos (`recovery_window_in_days = 0`).
+  - Si se requiere conservar documentos clínicos en un despliegue específico, cambia `delete_medical_bucket_on_destroy = false` antes de destruir.
+  - Al finalizar cualquier `terraform destroy`, valida que no queden recursos remanentes en la cuenta ejecutando:
+    ```powershell
+    terraform -chdir=infrastructure destroy -var-file=terraform.tfvars -auto-approve
+    python infrastructure/verify_teardown.py --report docs/evidencia-destruccion-aws.json
+    ```
+    El script `verify_teardown.py` audita dinámicamente **21 categorías de recursos AWS** más el estado de Terraform (`terraformManagedResources`), confirma la preservación de `LabRole` y sólo devuelve código de salida `0` (`result: "PASS"`) cuando no queda ningún recurso activo del proyecto. Ver detalles históricos y pendientes de M5 en [CIERRE-AWS.md](CIERRE-AWS.md).
 
-El bucket privado de expedientes se deja fuera del borrado automático para evitar eliminar documentos por accidente. Si usaste sólo datos de demostración y realmente quieres borrarlo, verifica primero el bucket exacto `midoc-documents-<account-id>` y sus objetos, luego usa AWS CLI deliberadamente. `terraform destroy` elimina otros recursos y RDS, pero no borra ese bucket de documentos.
+---
 
-## CI/CD
+## CI/CD en GitHub Actions
 
-`.github/workflows/ci.yml` valida pruebas, compilación y Terraform en push/PR. Aún falta CD: no hay una identidad de GitHub Actions configurada y validada para desplegar. No se ha demostrado que el laboratorio prohíba todas las alternativas de federación.
+- **Integración Continua (`.github/workflows/ci.yml`):** Ejecuta en push/PR a `main` las pruebas backend (`unittest`), validación Terraform (`fmt`, `init -backend=false`, `validate`, `py_compile`) y validación frontend (`tsc`, `vitest`, `build`).
+- **Entrega Continua (`.github/workflows/cd.yml`):** Se dispara en `push` a `main` y `workflow_dispatch` (`payment_mode`, `enable_monitoring`, `run_smoke`), ejecuta `preflight` (validación de secretos, prefijo Stripe y `aws sts get-caller-identity`) seguido de `deploy` (`terraform apply`, `publish_frontend.py` y smoke checks HTTP/CloudWatch). Ver configuración completa de secretos efímeros de Learner Lab en [OBSERVABILIDAD-Y-CICD.md](OBSERVABILIDAD-Y-CICD.md).

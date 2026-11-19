@@ -1,51 +1,57 @@
-# Arquitectura MiDoc · fase 2
+# Arquitectura de MiDoc (Fase 3)
 
 ```mermaid
 flowchart LR
-  Browser[Angular en navegador] -->|HTTPS, REST /index.html| Front[S3 frontend público, sólo archivos estáticos]
-  Browser -->|HTTPS + JWT| API[API Gateway HTTP]
-  API --> Lambda[AWS Lambda Python 3.12, LabRole]
-  Lambda -->|Citas, expediente, mensajes, inventario, promociones y avisos| RDS[(RDS PostgreSQL privado y cifrado)]
-  Lambda -->|Bitácora complementaria| Dynamo[(DynamoDB cifrado)]
-  Lambda -->|JWT y credenciales DB| Secrets[Secrets Manager]
-  Browser -->|POST firmado, 5 minutos| Docs[S3 documentos privado y cifrado]
-  Lambda -->|URLs de descarga firmadas| Docs
-  EB[EventBridge, cada 15 minutos] --> Lambda
-  Lambda --> CW[CloudWatch Logs]
-  GH[GitHub Actions] --> CI[Pruebas, build y validación Terraform]
-  CI -. CD pendiente: identidad sin configurar .-> AWS[AWS]
+  Browser[Angular 22 + Design System\nHashLocationStrategy] -->|HTTPS REST /index.html + config.json| Front[S3 Frontend público]
+  Browser -->|HTTPS + JWT + Idempotency-Key| API[API Gateway HTTP v2]
+  Browser -->|POST firmado 300s| Docs[S3 Documentos privado AES-256]
+  Browser <-->|Hosted Checkout| Stripe[Stripe API / Checkout]
+
+  API --> Lambda[AWS Lambda Python 3.12\nSubredes privadas + LabRole]
+  Stripe -->|Webhook HMAC-SHA256| API
+
+  Lambda -->|VPC Interface Endpoint| Secrets[Secrets Manager\napplication-* y stripe-*]
+  Lambda -->|VPC Gateway Endpoint\nEstudios y recetas PDF| Docs
+  Lambda -->|VPC Gateway Endpoint\nBitácora de acceso| Dynamo[(DynamoDB cifrado)]
+  Lambda -->|TCP 5432 SSL| RDS[(RDS PostgreSQL 16.13\nprivado y cifrado)]
+  Lambda -->|Subredes privadas -> NAT Gateway| Stripe
+
+  EB[EventBridge rate 15 min] --> Lambda
+  Lambda -->|JSON stderr + EMF stdout| CW[CloudWatch Logs / 12 EMF / 10 Alarmas\nDashboard midoc-estado / 4 Insights]
+  API -->|Access Logs JSON| CW
+  CW --> SNS[SNS midoc-alerts]
+
+  GH[GitHub Actions] --> CI[ci.yml: backend + tf + tsc/vitest/build]
+  GH --> CD[cd.yml: preflight + terraform apply + S3 + smoke]
+  CD --> AWS[AWS us-east-1]
 ```
 
 ## Componentes y persistencia
 
-| Servicio | Función y estado |
+| Servicio / Módulo | Función en Fase 3 |
 | --- | --- |
-| Lambda | Ejecuta API Python 3.12 dentro de la VPC; se invoca mediante API Gateway y usa el rol existente `LabRole`. |
-| API Gateway HTTP | Expone las rutas HTTPS y reenvía las solicitudes a Lambda. |
-| RDS PostgreSQL | Base transaccional de usuarios, citas, agenda, expediente, consentimiento, consultas, recetas, mensajes, inventario, promociones, suscripciones y avisos. RDS es privado y cifrado; Lambda es el único origen de TCP 5432. |
-| Secrets Manager | Guarda `jwt_secret` y el secreto administrado por RDS; la función los lee usando el endpoint privado. |
-| S3 frontend | Archivos estáticos públicos de lectura. Se utiliza el endpoint REST HTTPS /index.html, probado desde Edge sin necesitar CloudFront. |
-| S3 documentos | Bucket separado, privado, cifrado con AES-256 y con bloqueo de acceso público. Lambda crea formularios POST y URLs GET firmadas por 300 segundos. |
-| DynamoDB | Bitácora complementaria de lectura de expedientes: `pk=PACIENTE#<id>` y `sk=ACCESO#<fecha>#<uuid>`. RDS conserva también la bitácora y los datos transaccionales. |
-| IAM | No se crean políticas ni roles; Lambda ejecuta con el `LabRole` que ya proporciona AWS Academy. |
-| CloudWatch Logs | Registros de Lambda. Las cinco métricas de negocio, dos alertas y dashboard quedan para la fase final. |
+| **AWS Lambda (`midoc-api`)** | Ejecuta la API Python 3.12 y el trabajo programado de recordatorios dentro de dos subredes privadas (`172.31.96.0/20` en `us-east-1a`, `172.31.112.0/20` en `us-east-1b`) usando el rol existente `LabRole`. |
+| **NAT Gateway + EIP** | Controlado por `enable_nat_gateway = true`. Permite salida HTTPS desde las subredes privadas de Lambda hacia `https://api.stripe.com/v1/*` sin exponer Lambda ni RDS a tráfico entrante. |
+| **API Gateway HTTP v2** | Expone las rutas HTTPS, aplica CORS y escribe logs JSON de acceso (13 campos) hacia `/aws/apigateway/${project}-http-api`. |
+| **RDS PostgreSQL 16.13** | Fuente de verdad transaccional (`PubliclyAccessible=false`, cifrado, `sslmode=require`), accesible sólo desde el security group de Lambda. Esquema gestionado en `backend/src/schema.sql` y migraciones `001`–`004`. |
+| **Secrets Manager** | Dos secretos con `recovery_window_in_days = 0`: `${project}-application-*` (`jwt_secret`) y `${project}-stripe-*` (`payment_mode`, `stripe_secret_key`, `stripe_webhook_secret`, `price_amount_cents`, sin `ignore_changes` para alternar `test`/`live` en `apply`), más el secreto administrado de RDS. |
+| **S3 Frontend** | Publica el bundle Angular 22 (`HashLocationStrategy`) y `config.json` (`{"apiUrl", "paymentMode"}`) mediante el endpoint REST HTTPS `/index.html`, sin necesitar CloudFront. |
+| **S3 Documentos** | Bucket separado, privado, cifrado AES-256 y con bloqueo público. Almacena estudios clínicos subidos por pacientes (POST/GET firmados por 300 s) y **PDFs reales de recetas médicas** (`recetas/{receta_id}.pdf` generados por `backend/src/pdf_receta.py`). |
+| **DynamoDB** | Tabla `PAY_PER_REQUEST` cifrada para bitácora complementaria e inmutable de acceso a expedientes (`pk=PACIENTE#<id>`, `sk=ACCESO#<fecha>#<uuid>`), tolerante a fallos en lectura desde `/api/records/access-log`. |
+| **EventBridge** | Regla `midoc-reminders` (`rate(15 minutes)`) que invoca Lambda con `{"source": "midoc.reminders"}` para generar avisos de citas en 24 h y vencimientos de suscripción en 7 días. |
+| **CloudWatch + SNS** | 2 Log Groups con retención de 14 días, logs JSON con redacción de PII/secretos, **12 métricas EMF** en namespace `MiDoc`, **10 alarmas** (aplicación, Lambda, API GW y RDS), tópico **SNS** (`midoc-alerts` + correo opcional), **4 consultas Logs Insights** y dashboard `midoc-estado`. Ver [OBSERVABILIDAD-Y-CICD.md](OBSERVABILIDAD-Y-CICD.md). |
+| **IAM (`LabRole`)** | Se conserva el rol existente de AWS Academy sin crear roles ni modificar políticas globales. |
+| **GitHub Actions** | `ci.yml` valida pruebas backend, Terraform y frontend en cada push/PR; `cd.yml` ejecuta `preflight`, `terraform apply`, publicación frontend y smoke checks en `main` o `workflow_dispatch`. |
 
-Lambda usa endpoints VPC privados para Secrets Manager y endpoints Gateway para S3 y DynamoDB. Así, la función dentro de la VPC no necesita NAT para estos servicios. El acceso a RDS queda limitado al security group de Lambda. El frontend estático usa HTTPS mediante S3 REST. Se mantienen datos ficticios por tratarse de una demostración académica.
+## Flujos principales y controles de acceso
 
-## Flujos y control de acceso
+1. **Búsqueda y agenda:** El paciente filtra profesionales por especialidad, ubicación, texto y ordenamiento (`NAME`, `PRICE_ASC`, `PRICE_DESC`, `AVAILABILITY`). Sólo doctores/clínicas con suscripción activa aparecen en el directorio. Las reservas validan ventana de 90 días, unicidad en PostgreSQL (`ux_cita_doctor_horario`) e idempotencia (`Idempotency-Key`).
+2. **Expediente, consentimiento y estudios:** El paciente administra su expediente clínico, concede o revoca consentimiento por profesional (con aviso transaccional al médico), audita accesos mediante `GET /api/records/access-log` y gestiona documentos (`PDF`/`JPG`/`PNG`/`DICOM` <= 10 MB) con URLs firmadas de 300 s.
+3. **Suscripción real con Stripe, consultas y recetas PDF:** Los roles `DOCTOR` y `CLINICA` contratan la suscripción mensual ($20.00 USD / 30 días) vía Stripe Hosted Checkout (`POST /api/subscriptions/checkout`) con confirmación en servidor (`POST /api/subscriptions/confirm`) y respaldo por webhook firmado HMAC (`POST /api/webhooks/stripe`), serializados por `pg_advisory_xact_lock`. Al atender una cita, el profesional registra diagnóstico/tratamiento y genera un PDF real en S3 (`recetas/{receta_id}.pdf`) descargable con URL firmada. Ver [PAGOS-STRIPE.md](PAGOS-STRIPE.md).
 
-1. **Búsqueda y agenda:** el cliente consulta perfiles, promociones y horarios; sólo un paciente puede crear una cita. Participantes pueden cancelar/reprogramar; el profesional puede confirmar. El índice único de PostgreSQL evita doble reserva. EventBridge genera recordatorios para las siguientes 24 horas cada 15 minutos sin depender de la bandeja.
-2. **Expediente y consentimiento:** el paciente consulta y actualiza su expediente y concede o revoca acceso. El backend verifica rol, vigencia de suscripción y consentimiento antes de devolver datos o enlaces de documentos. Cada lectura profesional se registra en RDS y DynamoDB. Los documentos se cargan directamente a S3 con un POST firmado de cinco minutos.
-3. **Suscripción y consulta:** el pago de demostración habilita el panel; el profesional administra horario, inventario, promociones y pacientes autorizados. La consulta completa la cita y guarda diagnóstico, tratamiento y receta en una transacción PostgreSQL. El paciente recupera su receta y puede imprimirla/guardarla como PDF desde el navegador. La mensajería requiere cita o consentimiento y genera avisos internos.
+## Decisiones y restricciones de AWS Academy Learner Lab
 
-La suscripción es una simulación; no se envían datos de tarjetas a una pasarela ni se realizan cargos. No cargues documentos clínicos reales: este MVP de clase no incluye análisis antivirus, retención regulatoria ni controles operativos de producción.
-
-## Decisiones y limitaciones de la cuenta
-
-- Tarea 2 prioriza PostgreSQL por relaciones, restricciones y transacciones; DynamoDB se usa sólo para la bitácora propuesta como extensión. No hay datos de negocio duplicados en DynamoDB.
-- Cognito se excluyó porque la cuenta de AWS Academy no permite configurar los User Pools requeridos. Se usa JWT propio; su secreto y las credenciales DB van en Secrets Manager.
-- Las consultas `cloudfront:ListDistributions`, `cloudfront:GetDistribution` y lectura de políticas IAM resultaron denegadas. Se eligió S3 REST HTTPS para el frontend. No se comprobó que la creación de CloudFront esté prohibida.
-- El endpoint de S3 website es público sólo para `GetObject` del bucket de frontend. El bucket de documentos está separado y bloquea todo acceso público.
-- El pago sigue simulado. Las consultas SES probadas fueron denegadas; el permiso de envío no fue evaluado. No hay email/push; los avisos se generan automáticamente y se consultan al abrir MiDoc. Se mantiene la bandeja interna PostgreSQL y no se reutiliza el topic `RedshiftSNS`.
-- EventBridge ejecuta Lambda cada 15 minutos mediante permiso del recurso limitado a la regla. Se observó una invocación automática en CloudWatch. LabRole no se modifica.
-- El workflow hace integración continua; el despliegue automático queda pendiente porque este proyecto no tiene una identidad de despliegue federada configurada y validada.
+- **Autenticación:** Cognito fue sustituido por JWT propio + `scrypt` + Secrets Manager conforme a `tarea 2.pdf` (`REQ-T2-08`) porque Learner Lab restringe la creación de User Pools.
+- **Notificaciones al usuario:** SES devolvió `AccessDenied` y el tópico preexistente `RedshiftSNS` pertenece a otro servicio; los avisos clínicos y de citas se almacenan transaccionalmente en PostgreSQL (bandeja in-app + EventBridge), mientras que CloudWatch utiliza un tópico SNS propio (`midoc-alerts`).
+- **Frontend HTTPS:** Se utiliza S3 REST `/index.html` con Angular `HashLocationStrategy` (`withHashLocation()`) y Design System propio ([../design/system.md](../design/system.md)), resolviendo navegación profunda y retornos de Stripe sin CloudFront ni 404.
+- **Ciclo de destrucción limpio:** `delete_medical_bucket_on_destroy = true` y `recovery_window_in_days = 0` permiten destruir completamente toda la infraestructura con `terraform destroy` y verificar 0 remanentes vía `infrastructure/verify_teardown.py`. Ver [CIERRE-AWS.md](CIERRE-AWS.md).

@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,6 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: pip install -r requirements.txt
       - run: python -m unittest discover -s test -v
 
   infrastructure:
@@ -29,10 +31,14 @@ jobs:
         working-directory: infrastructure
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: hashicorp/setup-terraform@v3
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
       - run: terraform validate
+      - run: python -m py_compile *.py
 
   frontend:
     runs-on: ubuntu-latest
@@ -47,5 +53,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npm run build
+      - run: npx tsc -p tsconfig.app.json --noEmit
+      - run: npx tsc -p tsconfig.spec.json --noEmit
       - run: npm test
+      - run: npm run build
