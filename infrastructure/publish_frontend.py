@@ -25,7 +25,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bucket", help="Por defecto usa frontend_bucket_name de Terraform")
     parser.add_argument("--api-url", help="Por defecto usa api_url de Terraform")
-    parser.add_argument("--payment-mode", choices=("test", "live"), help="Por defecto usa payment_mode de Terraform o 'test'")
+    parser.add_argument("--payment-mode", choices=("test", "live", "simulado"), help="Por defecto usa payment_mode de Terraform o 'test'")
     parser.add_argument("--region", default="us-east-1")
     parser.add_argument("--dist", type=Path, default=ROOT / "frontend/dist/midoc-frontend")
     args = parser.parse_args()
@@ -35,7 +35,7 @@ def main():
     bucket = args.bucket or terraform_output("frontend_bucket_name")
     api_url = (args.api_url or terraform_output("api_url")).rstrip("/")
     payment_mode = (args.payment_mode or terraform_output("payment_mode", default="test")).strip().lower()
-    if payment_mode not in {"test", "live"}:
+    if payment_mode not in {"test", "live", "simulado"}:
         parser.error(f"paymentMode inválido: {payment_mode!r}")
     parsed = urlparse(api_url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:

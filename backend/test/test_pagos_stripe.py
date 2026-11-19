@@ -420,5 +420,107 @@ class StripeCheckoutConfirmWebhookTests(unittest.TestCase):
         self.assertEqual(succeeded[0]["PaymentSucceeded"], 1)
 
 
+class ModoPagoSimuladoTests(unittest.TestCase):
+    """Modo 'simulado': pagos sin llave real de Stripe (única función permitida como simulada)."""
+
+    def setUp(self):
+        app.DB.clear()
+        app.DB.update(copy.deepcopy(DB_ORIGINAL))
+        flujos.reset_rate_limits(app.DB)
+        pagos_stripe.limpiar_cache()
+
+    def tearDown(self):
+        pagos_stripe.limpiar_cache()
+
+    def _registrar_doctor(self):
+        resp = app.handle("POST", "/api/auth/register", body={
+            "email": "sim.doc@midoc.mx",
+            "password": "Segura123",
+            "role": "DOCTOR",
+            "name": "Dr. Simulado",
+            "specialty": "Cardiología",
+            "location": "CDMX",
+            "price": 700,
+        })
+        self.assertEqual(resp["statusCode"], 201)
+        return json.loads(resp["body"])
+
+    def test_es_sesion_simulada(self):
+        self.assertTrue(pagos_stripe.es_sesion_simulada("cs_sim_abc123def456"))
+        self.assertFalse(pagos_stripe.es_sesion_simulada("cs_test_abc12345"))
+        self.assertFalse(pagos_stripe.es_sesion_simulada("otro"))
+
+    def test_config_simulado_no_requiere_llave(self):
+        with patch.dict(os.environ, {"PAYMENT_MODE": "simulado"}, clear=True):
+            pagos_stripe.validar_config_stripe(pagos_stripe.obtener_config())
+
+    def test_checkout_simulado_sin_llave_genera_sesion_propia(self):
+        with patch.dict(os.environ, {"PAYMENT_MODE": "simulado", "FRONTEND_BASE_URL": "https://front.example/index.html"}, clear=True):
+            sesion = pagos_stripe.crear_checkout_suscripcion("doc-1", "user-1", "a@b.c")
+        self.assertTrue(sesion["sessionId"].startswith("cs_sim_"))
+        self.assertEqual(sesion["mode"], "simulado")
+        self.assertIn("#/suscripcion/pago-simulado", sesion["checkoutUrl"])
+        self.assertEqual(sesion["amountUsd"], 20.0)
+
+    def test_consulta_sesion_simulada_esta_pagada(self):
+        sesion = pagos_stripe.consultar_sesion_checkout("cs_sim_abc123def456")
+        self.assertEqual(sesion["paymentStatus"], "paid")
+        self.assertEqual(sesion["paymentMode"], "simulado")
+        self.assertEqual(sesion["amountTotal"], 2000)
+
+    def test_flujo_checkout_confirm_simulado_activa_suscripcion(self):
+        doc = self._registrar_doctor()
+        token = doc["token"]
+        env = {"PAYMENT_MODE": "simulado", "FRONTEND_BASE_URL": "https://front.example/index.html"}
+        with patch.dict(os.environ, env, clear=False):
+            ck = app.handle(
+                "POST", "/api/subscriptions/checkout",
+                headers={"authorization": f"Bearer {token}"}, body={},
+            )
+            self.assertEqual(ck["statusCode"], 201)
+            data = json.loads(ck["body"])["data"]
+            self.assertEqual(data["mode"], "simulado")
+            session_id = data["sessionId"]
+            self.assertTrue(session_id.startswith("cs_sim_"))
+
+            conf = app.handle(
+                "POST", "/api/subscriptions/confirm",
+                headers={"authorization": f"Bearer {token}"},
+                body={"sessionId": session_id},
+            )
+            self.assertEqual(conf["statusCode"], 200)
+            confirmado = json.loads(conf["body"])["data"]
+            self.assertTrue(confirmado["subscription"]["active"])
+            self.assertEqual(confirmado["payment"]["paymentMode"], "simulado")
+
+    def test_confirm_simulado_rechaza_sesion_de_otro_doctor(self):
+        doc_a = self._registrar_doctor()
+        # segundo doctor con otro correo
+        resp = app.handle("POST", "/api/auth/register", body={
+            "email": "sim.doc2@midoc.mx",
+            "password": "Segura123",
+            "role": "DOCTOR",
+            "name": "Dr. Dos",
+            "specialty": "Dermatología",
+            "location": "CDMX",
+            "price": 500,
+        })
+        self.assertEqual(resp["statusCode"], 201)
+        doc_b = json.loads(resp["body"])
+        env = {"PAYMENT_MODE": "simulado", "FRONTEND_BASE_URL": "https://front.example/index.html"}
+        with patch.dict(os.environ, env, clear=False):
+            ck = app.handle(
+                "POST", "/api/subscriptions/checkout",
+                headers={"authorization": f"Bearer {doc_a['token']}"}, body={},
+            )
+            session_id = json.loads(ck["body"])["data"]["sessionId"]
+            conf = app.handle(
+                "POST", "/api/subscriptions/confirm",
+                headers={"authorization": f"Bearer {doc_b['token']}"},
+                body={"sessionId": session_id},
+            )
+        self.assertEqual(conf["statusCode"], 403)
+
+
 if __name__ == "__main__":
     unittest.main()

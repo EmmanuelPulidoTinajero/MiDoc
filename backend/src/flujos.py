@@ -2833,7 +2833,13 @@ def atender_autenticado(app, usuario, method, path, query, body, headers=None):
         sesion = pagos_stripe.consultar_sesion_checkout(session_id)
         meta_doc = (sesion.get("metadata") or {}).get("doctorId") or sesion.get("clientReferenceId")
         if meta_doc != doctor_id:
-            raise ErrorApi(403, "La sesión de pago no pertenece a este profesional")
+            if pagos_stripe.es_sesion_simulada(session_id):
+                # En modo simulado la sesión no lleva metadata: el registro pendiente la vincula al doctor.
+                pendiente = repo.suscripcion_por_sesion(session_id)
+                if pendiente is None or pendiente.get("doctorId") != doctor_id:
+                    raise ErrorApi(403, "La sesión de pago no pertenece a este profesional")
+            else:
+                raise ErrorApi(403, "La sesión de pago no pertenece a este profesional")
         if sesion.get("paymentStatus") != "paid":
             raise ErrorApi(402, "El pago en Stripe aún no ha sido completado")
 

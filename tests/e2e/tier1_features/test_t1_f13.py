@@ -52,7 +52,7 @@ class TestTier1F13Infrastructure(unittest.TestCase):
         cfg = fetch_frontend_config(self.ctx)
         self.assertIn("apiUrl", cfg)
         self.assertTrue(str(cfg["apiUrl"]).startswith("http"))
-        self.assertIn(cfg.get("paymentMode"), ("test", "live"))
+        self.assertIn(cfg.get("paymentMode"), ("test", "live", "simulado"))
 
     def test_t1_f13_05_verify_teardown_dynamic_discovery_contract(self) -> None:
         vt = (self.ctx.repo_root / "infrastructure" / "verify_teardown.py").read_text(encoding="utf-8")

@@ -6,8 +6,8 @@ import subprocess
 bucket = os.environ["MIDOC_FRONTEND_BUCKET"]
 region = os.environ.get("AWS_REGION", "us-east-1")
 payment_mode = os.environ.get("MIDOC_PAYMENT_MODE", "test").strip().lower()
-if payment_mode not in {"test", "live"}:
-    raise SystemExit(f"MIDOC_PAYMENT_MODE inválido: {payment_mode!r}. Use 'test' o 'live'.")
+if payment_mode not in {"test", "live", "simulado"}:
+    raise SystemExit(f"MIDOC_PAYMENT_MODE inválido: {payment_mode!r}. Use 'test', 'live' o 'simulado'.")
 
 contenido = json.dumps({"apiUrl": os.environ["MIDOC_API_URL"], "paymentMode": payment_mode})
 subprocess.run(

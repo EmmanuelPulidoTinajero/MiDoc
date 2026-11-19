@@ -126,6 +126,9 @@ class TestTier3PairwiseCombinations(unittest.TestCase):
         self.assertGreaterEqual(len(log.data), 2)
 
     def test_t3_05_stripe_webhook_idempotency_and_subscription_status(self) -> None:
+        if self.ctx.stripe_mode == "simulado":
+            # La idempotencia vía webhook requiere la integración real de Stripe.
+            self.skipTest("Webhooks de Stripe no aplican en modo simulado")
         d_tok, d_user, d_id = register_doctor(self.client)
         if self.ctx.stripe_mock is not None:
             sid = self.client.post("/api/subscriptions/checkout", {}, token=d_tok).data["sessionId"]

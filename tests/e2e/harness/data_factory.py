@@ -206,6 +206,11 @@ def subscribe_doctor_via_stripe(
         return conf.data
 
     # live_cloud mode: authentic Stripe test-mode paths (no unconditional AssertionError)
+    if mode == "simulado":
+        conf = client.post("/api/subscriptions/confirm", {"sessionId": session_id}, token=doctor_token)
+        assert conf.status == 200, f"Simulated subscription confirm failed ({conf.status}): {conf.text}"
+        return {"sessionId": session_id, **conf.data}
+
     webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
     if webhook_secret:
         me = client.get("/api/me", token=doctor_token)

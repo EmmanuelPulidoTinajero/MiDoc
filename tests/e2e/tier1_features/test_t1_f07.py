@@ -23,7 +23,7 @@ class TestTier1F07StripeSubscriptions(unittest.TestCase):
         data = chk.data
         self.assertTrue(str(data.get("sessionId", "")).startswith("cs_"))
         self.assertTrue(str(data.get("checkoutUrl", "")).startswith("http"))
-        self.assertIn(data.get("mode"), ("test", "live"))
+        self.assertIn(data.get("mode"), ("test", "live", "simulado"))
         self.assertEqual(float(data.get("amountUsd")), 20.0)
         if self.ctx.stripe_mock is not None:
             reqs = [
@@ -68,7 +68,7 @@ class TestTier1F07StripeSubscriptions(unittest.TestCase):
         latest = subs.data.get("subscription")
         self.assertIsNotNone(latest)
         self.assertTrue(latest["active"])
-        self.assertIn(subs.data.get("paymentMode"), ("test", "live"))
+        self.assertIn(subs.data.get("paymentMode"), ("test", "live", "simulado"))
         self.assertTrue(subs.data.get("history") or latest.get("paymentRef"))
 
     def test_t1_f07_05_early_renewal_chains_30_days_onto_existing_end(self) -> None:

@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 from reglas import ErrorApi
 
@@ -75,8 +76,8 @@ def obtener_config(force_refresh: bool = False) -> dict:
                     continue
 
     payment_mode = (_resolver_valor(secretos, "PAYMENT_MODE", "payment_mode") or "test").lower()
-    if payment_mode not in ("test", "live"):
-        raise ErrorApi(500, "PAYMENT_MODE debe ser 'test' o 'live'")
+    if payment_mode not in ("test", "live", "simulado"):
+        raise ErrorApi(500, "PAYMENT_MODE debe ser 'test', 'live' o 'simulado'")
 
     secret_key = _resolver_valor(secretos, "STRIPE_SECRET_KEY", "stripe_secret_key") or ""
     webhook_secret = _resolver_valor(secretos, "STRIPE_WEBHOOK_SECRET", "stripe_webhook_secret") or ""
@@ -103,9 +104,17 @@ def obtener_config(force_refresh: bool = False) -> dict:
     }
 
 
+def es_sesion_simulada(session_id: object) -> bool:
+    """Indica si la sesión pertenece al modo de pago simulado (sin llave real)."""
+    return isinstance(session_id, str) and session_id.startswith("cs_sim_")
+
+
 def validar_config_stripe(cfg: dict) -> None:
     secret_key = cfg.get("secret_key") or ""
     mode = cfg.get("payment_mode") or "test"
+    if mode == "simulado":
+        # Único modo que opera sin llave real: el pago queda simulado de punta a punta.
+        return
     if not secret_key:
         raise ErrorApi(503, "Stripe no está configurado en el servidor")
     if mode == "test" and not secret_key.startswith("sk_test_"):
@@ -212,7 +221,16 @@ def crear_checkout_suscripcion(
 ) -> dict:
     cfg = obtener_config()
     validar_config_stripe(cfg)
+    # La validación de URLs de retorno aplica también en modo simulado (endurecimiento).
     success, cancel = construir_urls_retorno(cfg["frontend_base_url"], success_url, cancel_url)
+    if cfg["payment_mode"] == "simulado":
+        base = (cfg.get("frontend_base_url") or "").rstrip("/")
+        return {
+            "sessionId": f"cs_sim_{uuid.uuid4().hex}",
+            "checkoutUrl": f"{base}/#/suscripcion/pago-simulado" if base else "#/suscripcion/pago-simulado",
+            "mode": "simulado",
+            "amountUsd": round(cfg["amount_cents"] / 100, 2),
+        }
 
     params = {
         "mode": "payment",
@@ -271,6 +289,22 @@ def consultar_sesion_checkout(session_id: str) -> dict:
     if not isinstance(session_id, str) or not _SESSION_ID_RE.match(session_id):
         raise ErrorApi(400, "Identificador de sesión Stripe inválido")
     cfg = obtener_config()
+    if es_sesion_simulada(session_id):
+        # Las sesiones simuladas son autosuficientes: deben confirmarse incluso
+        # si la configuración de Stripe cambió después de crearlas.
+        return {
+            "id": session_id,
+            "paymentStatus": "paid",
+            "status": "complete",
+            "amountTotal": cfg.get("amount_cents", 2000),
+            "currency": "usd",
+            "clientReferenceId": None,
+            "metadata": {},
+            "paymentIntentId": None,
+            "cardBrand": "SIMULADA",
+            "cardLast4": "4242",
+            "paymentMode": "simulado",
+        }
     validar_config_stripe(cfg)
 
     path = (

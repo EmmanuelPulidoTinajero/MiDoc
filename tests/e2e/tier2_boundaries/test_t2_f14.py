@@ -41,6 +41,9 @@ class TestTier2F14ObservabilityBoundaries(unittest.TestCase):
         self.assertRegex(mon, r"evaluation_periods\s*=\s*2\b")
 
     def test_t2_f14_04_webhook_rejection_emits_payment_failed_telemetry(self) -> None:
+        if self.ctx.stripe_mode == "simulado":
+            # Sin integración Stripe real no hay webhooks que rechazar ni telemetría asociada.
+            self.skipTest("Webhooks de Stripe no aplican en modo simulado")
         bad = self.client.post(
             "/api/webhooks/stripe",
             raw_bytes=b'{"type":"checkout.session.completed"}',

@@ -84,10 +84,10 @@ variable "private_subnet_azs" {
 variable "payment_mode" {
   type        = string
   default     = "test"
-  description = "Stripe payment mode: 'test' for sandbox or 'live' for production."
+  description = "Stripe payment mode: 'test' for sandbox, 'live' for production, or 'simulado' to run payments simulated without a real key."
   validation {
-    condition     = contains(["test", "live"], var.payment_mode)
-    error_message = "payment_mode must be either 'test' or 'live'."
+    condition     = contains(["test", "live", "simulado"], var.payment_mode)
+    error_message = "payment_mode must be 'test', 'live' or 'simulado'."
   }
 }
 
