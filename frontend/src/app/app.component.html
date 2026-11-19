@@ -1,75 +1,213 @@
 @if (configError) {
   <main class="page startup-error">
-    <section class="panel" role="alert">
-      <p class="eyebrow">MiDoc</p>
-      <h1>No pudimos conectar con la aplicación.</h1>
-      <p>{{ configError }}</p>
-      <button type="button" (click)="reload()">Intentar de nuevo</button>
-    </section>
+    <ds-card padding="lg">
+      <div class="stack" role="alert">
+        <p class="eyebrow">MiDoc</p>
+        <h1>No pudimos conectar con la aplicación.</h1>
+        <ds-alert-banner tone="danger" [message]="configError" />
+        <div>
+          <ds-button variant="primary" (pressed)="reload()">Intentar de nuevo</ds-button>
+        </div>
+      </div>
+    </ds-card>
   </main>
 } @else {
-<a class="skip-link" href="#main-content">Saltar al contenido principal</a>
-<main class="page">
-  <header>
-    <div class="row top">
-      <a class="brand" href="#inicio" aria-label="MiDoc, inicio"><span class="brand-mark" aria-hidden="true">M</span><span>MiDoc</span></a>
-      @if (api.user(); as user) {
-        <div class="session-tools">
-          <p class="session">{{ user.name || user.email }} · {{ user.role }}</p>
-          <button type="button" class="secondary" [attr.aria-expanded]="notificationsOpen()" aria-controls="notification-list"
-            (click)="toggleNotifications()">
-            Avisos <span>({{ unreadCount() }} sin leer)</span>
-          </button>
-          <button type="button" class="link" (click)="logout()">Cerrar sesión</button>
+  <a class="skip-link" href="#main-content" (click)="focusMain($event)">
+    Saltar al contenido principal
+  </a>
+
+  <div class="page">
+    <header class="shell-header">
+      <div class="row top">
+        <a class="brand" routerLink="/buscar" aria-label="MiDoc, inicio">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span class="brand-name">MiDoc</span>
+        </a>
+
+        @if (api.user(); as user) {
+          <div class="session-tools">
+            <p class="session">{{ user.name || user.email }} · {{ roleLabel(user.role) }}</p>
+            <ds-button
+              variant="secondary"
+              size="sm"
+              [ariaLabel]="'Avisos, ' + unreadCount() + ' sin leer'"
+              (pressed)="toggleNotifications()"
+            >
+              Avisos
+              <ds-badge [tone]="unreadCount() > 0 ? 'warning' : 'neutral'">
+                {{ unreadCount() }}
+              </ds-badge>
+            </ds-button>
+            <ds-button variant="ghost" size="sm" (pressed)="logout()">Cerrar sesión</ds-button>
+          </div>
+        } @else {
+          <a class="nav-cta" routerLink="/acceso">Iniciar sesión o crear cuenta</a>
+        }
+      </div>
+
+      <div class="hero-copy">
+        <p class="eyebrow">Expediente y citas clínicas</p>
+        <h1 id="inicio">Tu salud, organizada en un solo lugar.</h1>
+        <p class="hero-subtitle">
+          Encuentra profesionales, agenda una cita y comparte tu expediente sólo con quien tú decidas.
+        </p>
+        <div class="trust-row">
+          <span>Expediente bajo tu control</span>
+          <span aria-hidden="true">·</span>
+          <span>Acceso con consentimiento</span>
+          <span aria-hidden="true">·</span>
+          <span>Historial clínico cifrado</span>
         </div>
-      } @else {
-        <button type="button" class="secondary" (click)="navigate('acceso')">Iniciar sesión o crear cuenta</button>
+      </div>
+    </header>
+
+    @if (notificationsOpen()) {
+      <aside
+        id="notification-list"
+        class="notifications-drawer"
+        aria-labelledby="notifications-title"
+        (keydown.escape)="notificationsOpen.set(false)"
+      >
+        <ds-card padding="md">
+          <div class="row" dsCardHeader>
+            <div class="row-start">
+              <h2 id="notifications-title" class="drawer-title">Avisos de MiDoc</h2>
+              <ds-badge [tone]="unreadCount() > 0 ? 'warning' : 'neutral'">
+                {{ unreadCount() }} sin leer
+              </ds-badge>
+            </div>
+            <div class="row-start">
+              <ds-button
+                variant="ghost"
+                size="sm"
+                [loading]="loadingNotifications()"
+                (pressed)="loadNotifications()"
+              >
+                Actualizar
+              </ds-button>
+              <ds-button variant="secondary" size="sm" (pressed)="notificationsOpen.set(false)">
+                Cerrar
+              </ds-button>
+            </div>
+          </div>
+
+          <div class="stack-sm">
+            @if (notificationsMessage()) {
+              <ds-alert-banner tone="danger" [message]="notificationsMessage()" />
+            }
+            @if (loadingNotifications() && !notifications().length) {
+              <ds-skeleton variant="row" [count]="2" label="Cargando avisos" />
+            } @else {
+              <ul class="history" aria-live="polite">
+                @for (item of notifications(); track item.id) {
+                  <li>
+                    <button
+                      type="button"
+                      class="notification-item"
+                      [class.unread]="!item.read"
+                      (click)="markNotification(item)"
+                    >
+                      <strong>{{ item.title }}</strong>
+                      <span>{{ item.message }}</span>
+                      <time>{{ formatDateTime(item.createdAt) }}</time>
+                      <span class="sr-only">
+                        {{ item.read ? 'Leído' : 'No leído' }}. Activar para marcar como leído.
+                      </span>
+                    </button>
+                  </li>
+                } @empty {
+                  <li>
+                    <ds-empty-state
+                      icon="inbox"
+                      title="Sin avisos pendientes"
+                      description="Aquí verás recordatorios de tus citas, vencimientos y mensajes nuevos."
+                    />
+                  </li>
+                }
+              </ul>
+            }
+            <p class="muted drawer-footnote">
+              Los avisos de citas próximas (24 h), vencimiento de suscripción (7 días), consentimientos y mensajes se actualizan automáticamente en MiDoc.
+            </p>
+          </div>
+        </ds-card>
+      </aside>
+    }
+
+    <nav class="shell-nav" aria-label="Secciones">
+      <a
+        class="nav-link"
+        routerLink="/buscar"
+        routerLinkActive="is-active"
+        #rlaBuscar="routerLinkActive"
+        [attr.aria-current]="rlaBuscar.isActive ? 'page' : null"
+      >
+        Buscar profesionales
+      </a>
+
+      @if (api.isPatient()) {
+        <a
+          class="nav-link"
+          routerLink="/citas"
+          routerLinkActive="is-active"
+          #rlaCitas="routerLinkActive"
+          [attr.aria-current]="rlaCitas.isActive ? 'page' : null"
+        >
+          Mis citas
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/expediente"
+          routerLinkActive="is-active"
+          #rlaExpediente="routerLinkActive"
+          [attr.aria-current]="rlaExpediente.isActive ? 'page' : null"
+        >
+          Mi expediente
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/mensajes"
+          routerLinkActive="is-active"
+          #rlaMensajesP="routerLinkActive"
+          [attr.aria-current]="rlaMensajesP.isActive ? 'page' : null"
+        >
+          Mensajes
+        </a>
       }
-    </div>
-    <h1 id="inicio">Tu salud, organizada en un solo lugar.</h1>
-    <p>Encuentra profesionales, agenda una cita y comparte tu expediente sólo con quien tú decidas.</p>
-    <div class="trust-row"><span>● Expediente bajo tu control</span><span>● Acceso con consentimiento</span><span>● Datos de demostración</span></div>
-  </header>
 
-  @if (notificationsOpen()) {
-    <section id="notification-list" class="panel notifications" aria-labelledby="notifications-title">
-      <div class="row"><h2 id="notifications-title">Avisos de MiDoc</h2><button type="button" class="link" (click)="loadNotifications()">Actualizar</button></div>
-      @if (notificationsMessage()) { <p role="status">{{ notificationsMessage() }}</p> }
-      <ul class="history" aria-live="polite">
-        @for (item of notifications(); track item.id) {
-          <li><button type="button" class="notification-item" [class.unread]="!item.read" (click)="markNotification(item)">
-            <strong>{{ item.title }}</strong><span>{{ item.message }}</span><time>{{ formatDateTime(item.createdAt) }}</time>
-            <span class="sr-only">{{ item.read ? 'Leído' : 'No leído' }}. Activar para marcar como leído.</span>
-          </button></li>
-        } @empty { <li>No tienes avisos todavía.</li> }
-      </ul>
-      <p class="muted">Los avisos se reciben dentro de MiDoc. El envío por correo todavía no está disponible.</p>
-    </section>
-  }
+      @if (api.isDoctor()) {
+        <a
+          class="nav-link"
+          routerLink="/citas"
+          routerLinkActive="is-active"
+          #rlaAgenda="routerLinkActive"
+          [attr.aria-current]="rlaAgenda.isActive ? 'page' : null"
+        >
+          Agenda
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/panel"
+          routerLinkActive="is-active"
+          #rlaPanel="routerLinkActive"
+          [attr.aria-current]="rlaPanel.isActive ? 'page' : null"
+        >
+          Mi panel
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/mensajes"
+          routerLinkActive="is-active"
+          #rlaMensajesD="routerLinkActive"
+          [attr.aria-current]="rlaMensajesD.isActive ? 'page' : null"
+        >
+          Mensajes
+        </a>
+      }
+    </nav>
 
-  <nav class="tabs" aria-label="Secciones">
-    <button type="button" [attr.aria-current]="tab() === 'buscar' ? 'page' : null" [class.active]="tab() === 'buscar'" (click)="navigate('buscar')">Buscar profesionales</button>
-    @if (api.isPatient()) {
-      <button type="button" [attr.aria-current]="tab() === 'citas' ? 'page' : null" [class.active]="tab() === 'citas'" (click)="navigate('citas')">Mis citas</button>
-      <button type="button" [attr.aria-current]="tab() === 'expediente' ? 'page' : null" [class.active]="tab() === 'expediente'" (click)="navigate('expediente')">Mi expediente</button>
-      <button type="button" [attr.aria-current]="tab() === 'mensajes' ? 'page' : null" [class.active]="tab() === 'mensajes'" (click)="navigate('mensajes')">Mensajes</button>
-    }
-    @if (api.isDoctor()) {
-      <button type="button" [attr.aria-current]="tab() === 'citas' ? 'page' : null" [class.active]="tab() === 'citas'" (click)="navigate('citas')">Agenda</button>
-      <button type="button" [attr.aria-current]="tab() === 'panel' ? 'page' : null" [class.active]="tab() === 'panel'" (click)="navigate('panel')">Mi panel</button>
-      <button type="button" [attr.aria-current]="tab() === 'mensajes' ? 'page' : null" [class.active]="tab() === 'mensajes'" (click)="navigate('mensajes')">Mensajes</button>
-    }
-  </nav>
-
-  <div id="main-content" role="region" aria-label="Contenido principal" tabindex="-1">
-  @switch (tab()) {
-    @case ('acceso') { <midoc-acceso (done)="signedIn()" /> }
-    @case ('citas') { <midoc-citas /> }
-    @case ('expediente') { <midoc-expediente /> }
-    @case ('panel') { <midoc-panel-doctor /> }
-    @case ('mensajes') { <midoc-mensajes /> }
-    @default { <midoc-busqueda (loginRequested)="navigate('acceso')" /> }
-  }
+    <main id="main-content" class="shell-main" tabindex="-1">
+      <router-outlet />
+    </main>
   </div>
-</main>
 }

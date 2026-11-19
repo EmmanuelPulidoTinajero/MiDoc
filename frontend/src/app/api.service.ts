@@ -1,8 +1,10 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
 
 export type Role = 'PACIENTE' | 'DOCTOR' | 'CLINICA';
+export type PaymentMode = 'test' | 'live';
 
 export interface SessionUser {
   id: string;
@@ -10,6 +12,13 @@ export interface SessionUser {
   role: Role;
   name?: string | null;
   doctorId?: string | null;
+}
+
+export interface PromotionSummary {
+  count: number;
+  maxDiscountPercent: number;
+  title: string;
+  discountedPrice: number;
 }
 
 export interface Doctor {
@@ -25,6 +34,8 @@ export interface Doctor {
   type?: Role;
   schedule?: ScheduleBlock[];
   promotions?: Promotion[];
+  promotionSummary?: PromotionSummary | null;
+  nextAvailableSlot?: string | null;
 }
 
 export interface Promotion {
@@ -86,6 +97,18 @@ export interface Consultation {
   notes?: string | null;
 }
 
+export interface ConsultationResult {
+  id: string;
+  appointmentId: string;
+  diagnosis: string;
+  treatment: string;
+  notes?: string | null;
+  prescriptionId: string;
+  documentKey?: string | null;
+  downloadUrl: string | null;
+  hasPdf: boolean;
+}
+
 export interface MedicalRecord {
   patient_id: string;
   allergies: string[];
@@ -117,14 +140,65 @@ export interface Consent {
   updatedAt: string;
 }
 
+export interface AccessLogEntry {
+  id: string;
+  actorId: string;
+  actorName: string;
+  actorRole: Role;
+  specialty?: string | null;
+  event: string;
+  accessedAt: string;
+}
+
+export interface PrescriptionDetail {
+  id: string;
+  patientId: string;
+  doctorId: string;
+  diagnosis: string;
+  treatment: string;
+  dateTime: string;
+  doctorName: string;
+  specialty: string;
+  patientName?: string | null;
+  consultationId?: string | null;
+  downloadUrl: string | null;
+  hasPdf: boolean;
+}
+
 export interface Subscription {
+  id?: string;
+  doctorId?: string;
+  doctor_id?: string;
   status: string;
   amount: number;
   start?: string | null;
   end?: string | null;
   cardBrand?: string | null;
   cardLast4?: string | null;
+  paymentRef?: string | null;
+  stripeSessionId?: string | null;
+  stripePaymentIntentId?: string | null;
+  paymentMode?: PaymentMode;
+  paidAt?: string | null;
   active: boolean;
+}
+
+export interface SubscriptionOverview {
+  subscription: Subscription | null;
+  paymentMode: PaymentMode;
+  history: Subscription[];
+}
+
+export interface StripeCheckoutResponse {
+  sessionId: string;
+  checkoutUrl: string;
+  mode: PaymentMode;
+  amountUsd: number;
+}
+
+export interface StripeConfirmResponse {
+  subscription: Subscription;
+  payment: Subscription;
 }
 
 export interface Patient {
@@ -132,6 +206,23 @@ export interface Patient {
   name: string;
   email: string;
   accessSince: string;
+}
+
+export interface Conversation {
+  userId: string;
+  name: string;
+  lastMessage: string;
+  updatedAt: string;
+  unread: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  recipientId: string;
+  content: string;
+  createdAt: string;
+  read: boolean;
 }
 
 export interface Profile extends SessionUser {
@@ -147,44 +238,77 @@ interface Session {
 
 const STORAGE_KEY = 'midoc.session';
 
-/** URL de la API: en localhost el backend local; en S3 la que publica Terraform en config.json. */
+/** URL de la API y modo de pago: en localhost usa backend local; en S3 lee config.json. */
 export let API_URL = '';
+export let PAYMENT_MODE: PaymentMode = 'test';
 export let API_CONFIG_ERROR = '';
 
-export async function loadConfig(): Promise<void> {
+export function setApiConfigForTest(url: string, mode: PaymentMode = 'test', error = ''): void {
+  API_URL = url;
+  PAYMENT_MODE = mode;
+  API_CONFIG_ERROR = error;
+}
+
+export async function loadConfig(options?: { forceFetch?: boolean }): Promise<void> {
   API_CONFIG_ERROR = '';
-  if (['localhost', '127.0.0.1', '[::1]'].includes(globalThis.location.hostname)) {
+  const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(globalThis.location.hostname);
+  if (isLocalHost && !options?.forceFetch) {
     API_URL = 'http://localhost:3000';
+    PAYMENT_MODE = 'test';
     return;
   }
   try {
     const response = await fetch('config.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('No fue posible cargar la configuración de la API.');
-    const config = (await response.json()) as { apiUrl?: string };
+    const config = (await response.json()) as { apiUrl?: string; paymentMode?: string };
     if (!config.apiUrl || !config.apiUrl.startsWith('https://')) {
       throw new Error('La dirección de la API no es válida o no usa HTTPS.');
     }
     API_URL = config.apiUrl.replace(/\/$/, '');
+    PAYMENT_MODE = config.paymentMode === 'live' ? 'live' : 'test';
   } catch (error) {
     API_CONFIG_ERROR = error instanceof Error ? error.message : 'No fue posible iniciar MiDoc.';
   }
 }
 
+export function createIdempotencyKey(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private readonly http = inject(HttpClient);
+  private readonly router = inject(Router);
   private readonly session = signal<Session | null>(this.readSession());
+  private readonly doctorCache = new Map<string, Doctor | null>();
 
   readonly user = computed(() => this.session()?.user ?? null);
   readonly isPatient = computed(() => this.user()?.role === 'PACIENTE');
   readonly isDoctor = computed(() => ['DOCTOR', 'CLINICA'].includes(this.user()?.role ?? ''));
+  readonly paymentMode = signal<PaymentMode>(PAYMENT_MODE);
+  readonly configError = signal(API_CONFIG_ERROR);
 
-  get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
-    return this.call(this.http.get<{ data: T }>(this.url(path), { headers: this.headers(), params: new HttpParams({ fromObject: params }) }));
+  syncConfigState(): void {
+    this.paymentMode.set(PAYMENT_MODE);
+    this.configError.set(API_CONFIG_ERROR);
   }
 
-  post<T>(path: string, body: unknown = {}): Promise<T> {
-    return this.call(this.http.post<{ data: T }>(this.url(path), body, { headers: this.headers() }));
+  get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+    return this.call(
+      this.http.get<{ data: T }>(this.url(path), {
+        headers: this.headers(),
+        params: new HttpParams({ fromObject: params }),
+      }),
+    );
+  }
+
+  post<T>(path: string, body: unknown = {}, extraHeaders: Record<string, string> = {}): Promise<T> {
+    return this.call(
+      this.http.post<{ data: T }>(this.url(path), body, { headers: this.headers(extraHeaders) }),
+    );
   }
 
   put<T>(path: string, body: unknown): Promise<T> {
@@ -201,10 +325,19 @@ export class ApiService {
 
   async uploadDocument(file: File): Promise<void> {
     const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
-    const types: Record<string, string> = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', dcm: 'application/dicom', dicom: 'application/dicom' };
-    const contentType = !file.type || file.type === 'application/octet-stream' ? types[extension] ?? file.type : file.type;
+    const types: Record<string, string> = {
+      pdf: 'application/pdf',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      dcm: 'application/dicom',
+      dicom: 'application/dicom',
+    };
+    const contentType =
+      !file.type || file.type === 'application/octet-stream' ? types[extension] ?? file.type : file.type;
     const request = await this.post<{ url: string; fields: Record<string, string> }>(
-      '/api/records/documents', { name: file.name, contentType, size: file.size }
+      '/api/records/documents',
+      { name: file.name, contentType, size: file.size },
     );
     const form = new FormData();
     for (const [key, value] of Object.entries(request.fields)) form.append(key, value);
@@ -223,17 +356,84 @@ export class ApiService {
     this.saveSession(await this.raw(this.http.post<Session>(this.url('/api/auth/register'), body)));
   }
 
+  async refreshSession(): Promise<void> {
+    const result = await this.raw(
+      this.http.post<Session>(this.url('/api/auth/refresh'), {}, { headers: this.headers() }),
+    );
+    this.saveSession(result);
+  }
+
   async refreshProfile(): Promise<Profile> {
     const profile = await this.get<Profile>('/api/me');
     const current = this.session();
     if (current) {
-      this.saveSession({ token: current.token, user: { ...current.user, name: profile.name, doctorId: profile.doctorId } });
+      this.saveSession({
+        token: current.token,
+        user: { ...current.user, name: profile.name, doctorId: profile.doctorId },
+      });
     }
     return profile;
   }
 
+  async updateMe(body: Record<string, unknown>): Promise<Profile> {
+    const profile = await this.put<Profile>('/api/me', body);
+    const current = this.session();
+    if (current) {
+      this.saveSession({
+        token: current.token,
+        user: { ...current.user, name: profile.name, doctorId: profile.doctorId },
+      });
+    }
+    return profile;
+  }
+
+  createSubscriptionCheckout(
+    body: { successUrl?: string; cancelUrl?: string } = {},
+    idempotencyKey = createIdempotencyKey(),
+  ): Promise<StripeCheckoutResponse> {
+    return this.post<StripeCheckoutResponse>('/api/subscriptions/checkout', body, {
+      'Idempotency-Key': idempotencyKey,
+    });
+  }
+
+  confirmSubscription(sessionId: string): Promise<StripeConfirmResponse> {
+    return this.post<StripeConfirmResponse>('/api/subscriptions/confirm', { sessionId });
+  }
+
+  async getSubscriptions(): Promise<SubscriptionOverview> {
+    const overview = await this.get<SubscriptionOverview>('/api/subscriptions');
+    if (overview.paymentMode === 'live' || overview.paymentMode === 'test') {
+      this.paymentMode.set(overview.paymentMode);
+    }
+    return overview;
+  }
+
+  getRecordAccessLog(): Promise<AccessLogEntry[]> {
+    return this.get<AccessLogEntry[]>('/api/records/access-log');
+  }
+
+  getPrescription(id: string): Promise<PrescriptionDetail> {
+    return this.get<PrescriptionDetail>(`/api/prescriptions/${id}`);
+  }
+
+  async resolveDoctorUserId(doctorId: string): Promise<Doctor | null> {
+    if (!doctorId) return null;
+    if (this.doctorCache.has(doctorId)) {
+      return this.doctorCache.get(doctorId) ?? null;
+    }
+    try {
+      const doctor = await this.get<Doctor>(`/api/doctors/${doctorId}`);
+      this.doctorCache.set(doctorId, doctor);
+      return doctor;
+    } catch {
+      this.doctorCache.set(doctorId, null);
+      return null;
+    }
+  }
+
   logout(): void {
     localStorage.removeItem(STORAGE_KEY);
+    this.doctorCache.clear();
     this.session.set(null);
   }
 
@@ -242,9 +442,9 @@ export class ApiService {
     return `${API_URL}${path}`;
   }
 
-  private headers(): Record<string, string> {
+  private headers(extra: Record<string, string> = {}): Record<string, string> {
     const token = this.session()?.token;
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    return token ? { Authorization: `Bearer ${token}`, ...extra } : { ...extra };
   }
 
   private async call<T>(request: Observable<{ data: T }>): Promise<T> {
@@ -258,9 +458,12 @@ export class ApiService {
       if (error instanceof HttpErrorResponse) {
         if (error.status === 401 && this.session()) {
           this.logout();
+          void this.router.navigate(['/acceso'], { queryParams: { reason: 'expired' } });
         }
         const message = (error.error as { error?: string } | null)?.error;
-        throw new Error(message ?? (error.status === 0 ? 'No fue posible conectar con la API' : `Error ${error.status}`));
+        throw new Error(
+          message ?? (error.status === 0 ? 'No fue posible conectar con la API' : `Error ${error.status}`),
+        );
       }
       throw error;
     }
@@ -288,11 +491,19 @@ export function errorMessage(error: unknown): string {
 export const DAYS = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 export function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Mexico_City' });
+  return new Date(value).toLocaleString('es-MX', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/Mexico_City',
+  });
 }
 
 export function formatTime(value: string): string {
-  return new Date(value).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Mexico_City' });
+  return new Date(value).toLocaleTimeString('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Mexico_City',
+  });
 }
 
 export function todayInMexico(offsetDays = 0): string {

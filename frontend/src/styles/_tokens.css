@@ -17,6 +17,7 @@
   --color-text-soft: #5b7268;
   --color-text-disabled: #9aaba2;
   --color-text-inverse: #ffffff;
+  --color-backdrop: rgba(23, 53, 43, 0.42);
 
   /* Marca y acento */
   --color-primary: #246b59;
@@ -24,9 +25,11 @@
   --color-primary-active: #164a3d;
   --color-primary-soft: #d5efe2;
   --color-accent: #8a4b00;
+  --color-accent-soft: #fdf3e4;
 
   /* Estados */
   --color-danger: #a83a32;
+  --color-danger-hover: #8c2d26;
   --color-danger-soft: #f8dcd9;
   --color-warning: #6b4d00;
   --color-warning-soft: #fff7e5;
@@ -38,6 +41,7 @@
   /* Foco: un solo estilo en todo el producto. */
   --color-focus: #17352b;
   --focus-ring: 2px solid var(--color-focus);
+  --focus-offset: 2px;
 
   /* Tipografía */
   --font-display: ui-serif, Georgia, "Times New Roman", serif;
@@ -94,6 +98,12 @@
   --control-height-sm: 2rem;
   --measure: 68ch;
   --container-max: 72rem;
+
+  /* Capas */
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-modal: 40;
+  --z-toast: 50;
 
   /* Elevación */
   --shadow-1: 0 1px 2px rgba(23, 53, 43, 0.06), 0 1px 1px rgba(23, 53, 43, 0.04);

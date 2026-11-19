@@ -29,6 +29,7 @@
           "options": {
             "buildTarget": "midoc-frontend:build",
             "runner": "vitest",
+            "runnerConfig": "vitest-base.config.mjs",
             "include": ["**/*.spec.ts"]
           }
         }

@@ -1,99 +1,330 @@
 @if (loading()) {
-  <section class="panel" role="status" aria-live="polite">Cargando tu expediente…</section>
+  <ds-card padding="lg">
+    <ds-skeleton variant="card" [count]="3" label="Cargando tu expediente médico" />
+  </ds-card>
 } @else if (!record()) {
-  <section class="panel"><p role="alert">{{ message() || 'No pudimos cargar tu expediente.' }}</p>
-    <button type="button" (click)="load()">Intentar de nuevo</button></section>
+  <ds-card padding="lg">
+    <ds-alert-banner
+      tone="danger"
+      title="No pudimos cargar tu expediente"
+      [message]="message() || 'Intenta nuevamente en unos segundos.'"
+      actionLabel="Intentar de nuevo"
+      (action)="load()"
+    />
+  </ds-card>
 } @else {
-<section class="panel">
-  <h2>Mi expediente médico</h2>
-  <p class="muted">Tu expediente es tuyo: solo lo ven los profesionales a los que les des acceso.</p>
-  <form class="grid-form" (ngSubmit)="save()">
-    <label>Fecha de nacimiento
-      <input type="date" name="birthDate" [(ngModel)]="form.birthDate">
-    </label>
-    <label>Sexo
-      <select name="sex" [(ngModel)]="form.sex">
-        <option value="">Sin especificar</option>
-        @for (s of sexes; track s) { <option [value]="s">{{ s }}</option> }
-      </select>
-    </label>
-    <label>Tipo de sangre
-      <select name="bloodType" [(ngModel)]="form.bloodType">
-        <option value="">Sin especificar</option>
-        @for (t of bloodTypes; track t) { <option [value]="t">{{ t }}</option> }
-      </select>
-    </label>
-    <label class="wide">Alergias (separadas por coma)
-      <input name="allergies" [(ngModel)]="form.allergies" placeholder="Penicilina, polen">
-    </label>
-    <label class="wide">Padecimientos crónicos (separados por coma)
-      <input name="chronicConditions" [(ngModel)]="form.chronicConditions" placeholder="Asma">
-    </label>
-    <label class="wide">Medicamentos actuales (separados por coma)
-      <input name="medications" [(ngModel)]="form.medications" placeholder="Salbutamol">
-    </label>
-    <label class="wide">Antecedentes y notas
-      <textarea name="notes" rows="3" [(ngModel)]="form.notes"></textarea>
-    </label>
-    <button type="submit" [disabled]="saving()">{{ saving() ? 'Guardando…' : 'Guardar expediente' }}</button>
-  </form>
-  @if (message()) { <p role="status" class="notice">{{ message() }}</p> }
-</section>
+  <div class="stack">
+    <ds-card padding="lg">
+      <ds-page-header
+        eyebrow="Privacidad clínica"
+        title="Mi expediente médico"
+        subtitle="Controla tus datos clínicos, estudios privados, permisos de acceso y quién ha consultado tu historial."
+        [headingLevel]="2"
+      />
+      <div class="row-start" role="navigation" aria-label="Secciones del expediente">
+        <ds-button variant="ghost" size="sm" (pressed)="scrollToSection('sec-datos')">Datos clínicos</ds-button>
+        <ds-button variant="ghost" size="sm" (pressed)="scrollToSection('sec-documentos')">Documentos</ds-button>
+        <ds-button variant="ghost" size="sm" (pressed)="scrollToSection('sec-consentimientos')">Consentimientos</ds-button>
+        <ds-button variant="ghost" size="sm" (pressed)="scrollToSection('sec-accesos')">Quién vio mi expediente</ds-button>
+        <ds-button variant="ghost" size="sm" (pressed)="scrollToSection('sec-historial')">Historial y recetas</ds-button>
+      </div>
+    </ds-card>
 
-<section class="panel" aria-labelledby="documents-title">
-  <h2 id="documents-title">Estudios y documentos</h2>
-  <p class="muted">Archivos privados disponibles sólo para ti y los profesionales con acceso autorizado. PDF, JPG, PNG o DICOM; máximo 10 MB.</p>
-  <label>Agregar archivo clínico
-    <input type="file" accept="application/pdf,image/jpeg,image/png,application/dicom,.dcm,.dicom" [disabled]="uploading()" (change)="uploadDocument($event)">
-  </label>
-  @if (uploading()) { <p role="status" class="notice">Guardando archivo de forma segura…</p> }
-  <ul class="compact">
-    @for (document of documents(); track document.id) {
-      <li><a [href]="document.downloadUrl" target="_blank" rel="noopener">{{ document.name }}</a>
-        <span class="muted"> · {{ formatSize(document.size) }}</span>
-        <button type="button" class="link danger-text" [disabled]="deletingDocumentId() === document.id" (click)="deleteDocument(document)">{{ deletingDocumentId() === document.id ? 'Eliminando…' : 'Eliminar' }}</button></li>
-    } @empty { <li>No hay documentos clínicos adjuntos.</li> }
-  </ul>
-</section>
+    <ds-card padding="lg" id="sec-datos">
+      <ds-page-header
+        eyebrow="1 · Perfil clínico"
+        title="Datos clínicos"
+        subtitle="Tu información es privada y sólo se comparte con profesionales autorizados."
+        [headingLevel]="2"
+      />
+      <form class="grid-form" (ngSubmit)="save()">
+        <ds-field label="Fecha de nacimiento">
+          <input dsControl type="date" name="birthDate" [(ngModel)]="form.birthDate" />
+        </ds-field>
+        <ds-field label="Sexo">
+          <select dsControl name="sex" [(ngModel)]="form.sex">
+            <option value="">Sin especificar</option>
+            @for (s of sexes; track s) { <option [value]="s">{{ s }}</option> }
+          </select>
+        </ds-field>
+        <ds-field label="Tipo de sangre">
+          <select dsControl name="bloodType" [(ngModel)]="form.bloodType">
+            <option value="">Sin especificar</option>
+            @for (t of bloodTypes; track t) { <option [value]="t">{{ t }}</option> }
+          </select>
+        </ds-field>
+        <ds-field class="wide" label="Alergias (separadas por coma)">
+          <input dsControl name="allergies" [(ngModel)]="form.allergies" placeholder="Penicilina, polen" />
+        </ds-field>
+        <ds-field class="wide" label="Padecimientos crónicos (separados por coma)">
+          <input dsControl name="chronicConditions" [(ngModel)]="form.chronicConditions" placeholder="Asma" />
+        </ds-field>
+        <ds-field class="wide" label="Medicamentos actuales (separados por coma)">
+          <input dsControl name="medications" [(ngModel)]="form.medications" placeholder="Salbutamol" />
+        </ds-field>
+        <ds-field class="wide" label="Antecedentes y notas">
+          <textarea dsControl name="notes" rows="3" [(ngModel)]="form.notes"></textarea>
+        </ds-field>
+        <div>
+          <ds-button type="submit" variant="primary" [loading]="saving()">
+            {{ saving() ? 'Guardando…' : 'Guardar expediente' }}
+          </ds-button>
+        </div>
+      </form>
+      @if (message()) {
+        <div style="margin-top: var(--space-3);">
+          <ds-alert-banner [tone]="messageTone()" [message]="message()" />
+        </div>
+      }
+    </ds-card>
 
-<section class="panel">
-  <h2>¿Quién puede ver mi expediente?</h2>
-  <div class="table-scroll" role="region" aria-label="Permisos para consultar tu expediente" tabindex="0">
-  <table>
-    <caption class="sr-only">Profesionales y permisos de acceso a tu expediente</caption>
-    <thead><tr><th scope="col">Profesional</th><th scope="col">Especialidad</th><th scope="col">Acceso</th><th scope="col">Actualizado</th><th scope="col">Acción</th></tr></thead>
-    <tbody>
-      @for (c of consents(); track c.doctorId) {
-        <tr>
-          <td>{{ c.doctorName }}</td>
-          <td>{{ c.specialty }}</td>
-          <td><span class="badge" [attr.data-status]="c.granted ? 'CONFIRMADA' : 'CANCELADA'">{{ c.granted ? 'Otorgado' : 'Revocado' }}</span></td>
-          <td>{{ formatDateTime(c.updatedAt) }}</td>
-          <td>
-            @if (c.granted) {
-              <button type="button" class="danger" [disabled]="updatingConsentId() === c.doctorId" (click)="setConsent(c.doctorId, false)">{{ updatingConsentId() === c.doctorId ? 'Actualizando…' : 'Revocar' }}</button>
-            } @else {
-              <button type="button" class="secondary" [disabled]="updatingConsentId() === c.doctorId" (click)="setConsent(c.doctorId, true)">{{ updatingConsentId() === c.doctorId ? 'Actualizando…' : 'Otorgar' }}</button>
+    <ds-card padding="lg" id="sec-documentos">
+      <ds-page-header
+        eyebrow="2 · Almacenamiento privado"
+        title="Estudios y documentos"
+        subtitle="PDF, JPG, PNG o DICOM; tamaño máximo de 10 MB por archivo."
+        [headingLevel]="2"
+      />
+      <div class="stack">
+        <ds-field label="Agregar archivo clínico" hint="Formatos permitidos: PDF, JPG, PNG, DCM/DICOM (máx. 10 MB).">
+          <input
+            dsControl
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,application/dicom,.dcm,.dicom"
+            [disabled]="uploading()"
+            (change)="uploadDocument($event)"
+          />
+        </ds-field>
+        @if (uploading()) {
+          <ds-skeleton variant="row" [count]="1" label="Subiendo archivo de forma segura" />
+        }
+        @if (documentsMessage()) {
+          <ds-alert-banner [tone]="documentsTone()" [message]="documentsMessage()" />
+        }
+        @if (documents().length) {
+          <ul class="compact">
+            @for (document of documents(); track document.id) {
+              <li class="row">
+                <div>
+                  <a [href]="document.downloadUrl" target="_blank" rel="noopener">{{ document.name }}</a>
+                  <span class="muted"> · {{ formatSize(document.size) }}</span>
+                </div>
+                <ds-button
+                  variant="danger"
+                  size="sm"
+                  [loading]="deletingDocumentId() === document.id"
+                  (pressed)="requestDeleteDocument(document)"
+                >
+                  Eliminar
+                </ds-button>
+              </li>
             }
-          </td>
-        </tr>
-      } @empty { <tr><td colspan="5">No has compartido tu expediente con nadie.</td></tr> }
-    </tbody>
-  </table>
-  </div>
-  <div class="grid-form">
-    <label>Dar acceso a
-      <select name="doctorToGrant" [(ngModel)]="doctorToGrant">
-        <option value="">Elige un profesional</option>
-        @for (d of doctors(); track d.id) { <option [value]="d.id">{{ d.name }} · {{ d.specialty }}</option> }
-      </select>
-    </label>
-    <button type="button" [disabled]="!doctorToGrant || !!updatingConsentId()" (click)="setConsent(doctorToGrant, true)">Otorgar acceso</button>
-  </div>
-  @if (consentMessage()) { <p role="status" class="notice">{{ consentMessage() }}</p> }
-</section>
+          </ul>
+        } @else {
+          <ds-empty-state
+            icon="file"
+            title="Sin estudios adjuntos"
+            description="Sube resultados de laboratorio, radiografías o documentos médicos privados."
+          />
+        }
+      </div>
+    </ds-card>
 
-<section class="panel">
-  <midoc-expediente-vista [record]="record()" [documents]="documents()" [showClinicalData]="false" />
-</section>
+    <ds-card padding="lg" id="sec-consentimientos">
+      <ds-page-header
+        eyebrow="3 · Control de acceso"
+        title="¿Quién puede ver mi expediente?"
+        subtitle="Otorga o revoca en cualquier momento el permiso para consultar tu información."
+        [headingLevel]="2"
+      />
+
+      <div class="stack">
+        @if (consents().length) {
+          <div class="table-scroll" role="region" aria-label="Permisos para consultar tu expediente" tabindex="0">
+            <table>
+              <caption class="sr-only">Profesionales y permisos de acceso a tu expediente</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Profesional</th>
+                  <th scope="col">Especialidad</th>
+                  <th scope="col">Acceso</th>
+                  <th scope="col">Actualizado</th>
+                  <th scope="col">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of consents(); track c.doctorId) {
+                  <tr>
+                    <td>{{ c.doctorName }}</td>
+                    <td>{{ c.specialty }}</td>
+                    <td><ds-badge [status]="c.granted ? 'OTORGADO' : 'REVOCADO'" /></td>
+                    <td>{{ formatDateTime(c.updatedAt) }}</td>
+                    <td>
+                      @if (c.granted) {
+                        <ds-button
+                          variant="danger"
+                          size="sm"
+                          [loading]="updatingConsentId() === c.doctorId"
+                          (pressed)="requestRevokeConsent(c)"
+                        >
+                          Revocar
+                        </ds-button>
+                      } @else {
+                        <ds-button
+                          variant="secondary"
+                          size="sm"
+                          [loading]="updatingConsentId() === c.doctorId"
+                          (pressed)="setConsent(c.doctorId, true)"
+                        >
+                          Otorgar
+                        </ds-button>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <ds-empty-state
+            icon="inbox"
+            title="Aún no compartes tu expediente"
+            description="Elige un profesional abajo si deseas autorizarlo antes o después de tu cita."
+          />
+        }
+
+        <div class="grid-form">
+          <ds-field label="Dar acceso a un profesional">
+            <select dsControl name="doctorToGrant" [(ngModel)]="doctorToGrant">
+              <option value="">Elige un profesional</option>
+              @for (d of doctors(); track d.id) {
+                <option [value]="d.id">{{ d.name }} · {{ d.specialty }}</option>
+              }
+            </select>
+          </ds-field>
+          <div>
+            <ds-button
+              variant="primary"
+              [disabled]="!doctorToGrant"
+              [loading]="!!updatingConsentId()"
+              (pressed)="setConsent(doctorToGrant, true)"
+            >
+              Otorgar acceso
+            </ds-button>
+          </div>
+        </div>
+
+        @if (consentMessage()) {
+          <ds-alert-banner [tone]="consentTone()" [message]="consentMessage()" />
+        }
+      </div>
+    </ds-card>
+
+    <ds-card padding="lg" id="sec-accesos">
+      <ds-page-header
+        eyebrow="4 · Bitácora de auditoría"
+        title="Quién vio mi expediente"
+        subtitle="Registro cronológico de cada consulta autorizada realizada por profesionales."
+        [headingLevel]="2"
+      >
+        <div dsPageActions>
+          <ds-button variant="secondary" size="sm" [loading]="loadingAccessLog()" (pressed)="loadAccessLog()">
+            Actualizar
+          </ds-button>
+        </div>
+      </ds-page-header>
+
+      @if (loadingAccessLog()) {
+        <ds-skeleton variant="row" [count]="3" label="Cargando bitácora de accesos" />
+      } @else if (accessLogMessage()) {
+        <ds-alert-banner
+          tone="danger"
+          [message]="accessLogMessage()"
+          actionLabel="Reintentar"
+          (action)="loadAccessLog()"
+        />
+      } @else if (accessLog().length) {
+        <div class="table-scroll" role="region" aria-label="Bitácora de accesos al expediente" tabindex="0">
+          <table>
+            <caption class="sr-only">Historial de consultas al expediente por profesionales</caption>
+            <thead>
+              <tr>
+                <th scope="col">Profesional</th>
+                <th scope="col">Especialidad / Rol</th>
+                <th scope="col">Acción</th>
+                <th scope="col">Fecha y hora</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (entry of accessLog(); track entry.id) {
+                <tr>
+                  <td>{{ entry.actorName }}</td>
+                  <td>{{ entry.specialty || accessRoleLabel(entry.actorRole) }}</td>
+                  <td>{{ accessEventLabel(entry.event) }}</td>
+                  <td>{{ formatDateTime(entry.accessedAt) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <ds-empty-state
+          icon="file"
+          title="Sin accesos registrados"
+          description="Cuando un profesional autorizado consulte tu expediente, el registro aparecerá aquí."
+        />
+      }
+    </ds-card>
+
+    <ds-card padding="lg" id="sec-historial">
+      <ds-page-header
+        eyebrow="5 · Consultas y recetas"
+        title="Historial clínico"
+        subtitle="Resumen de consultas concluidas y descarga o impresión de tus recetas."
+        [headingLevel]="2"
+      />
+      <midoc-expediente-vista
+        [record]="record()"
+        [documents]="documents()"
+        [showClinicalData]="false"
+        [showDocuments]="false"
+      />
+    </ds-card>
+  </div>
 }
+
+<ds-modal
+  [open]="!!pendingDeleteDoc()"
+  title="Eliminar documento"
+  tone="danger"
+  confirmLabel="Sí, eliminar"
+  cancelLabel="Cancelar"
+  [busy]="!!deletingDocumentId()"
+  (closed)="pendingDeleteDoc.set(null)"
+  (confirmed)="confirmDeleteDocument()"
+>
+  @if (pendingDeleteDoc(); as doc) {
+    <p>¿Deseas eliminar <strong>{{ doc.name }}</strong> de tu expediente?</p>
+    <p class="muted">Esta acción retira el archivo de tu almacenamiento privado de forma permanente.</p>
+  }
+</ds-modal>
+
+<ds-modal
+  [open]="!!pendingRevokeConsent()"
+  title="Revocar acceso al expediente"
+  tone="danger"
+  confirmLabel="Sí, revocar acceso"
+  cancelLabel="Conservar acceso"
+  [busy]="!!updatingConsentId()"
+  (closed)="pendingRevokeConsent.set(null)"
+  (confirmed)="confirmRevokeConsent()"
+>
+  @if (pendingRevokeConsent(); as c) {
+    <p>
+      ¿Confirmas que deseas revocar el acceso de <strong>{{ c.doctorName }}</strong>?
+    </p>
+    <p class="muted">
+      De inmediato dejará de ver tus datos clínicos, documentos privados y tampoco podrá registrar nuevas consultas en tu historial.
+    </p>
+  }
+</ds-modal>
