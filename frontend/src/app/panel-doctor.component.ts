@@ -241,10 +241,10 @@ export class PanelDoctorComponent implements OnInit {
       this.paymentMode.set(checkout.mode);
       if (checkout.mode === 'simulado') {
         // Modo simulado: no hay salida a Stripe; se confirma la sesión propia al instante.
-        await this.confirmStripeReturn(checkout.sessionId);
+        const end = await this.confirmStripeReturn(checkout.sessionId);
         this.subscriptionTone.set('success');
         this.subscriptionMessage.set(
-          `Pago simulado (sin cargo real): suscripción activa. Vigente hasta el ${this.subscription()?.end ?? ''}`.trim(),
+          `Pago simulado (sin cargo real): suscripción activa. Vigente hasta el ${end ?? '—'}`.trim(),
         );
         this.paying.set(false);
         return;
@@ -257,7 +257,7 @@ export class PanelDoctorComponent implements OnInit {
     }
   }
 
-  private async confirmStripeReturn(sessionId: string): Promise<void> {
+  private async confirmStripeReturn(sessionId: string): Promise<string | null> {
     this.confirmingStripe.set(true);
     try {
       const result = await this.api.confirmSubscription(sessionId);
@@ -270,10 +270,12 @@ export class PanelDoctorComponent implements OnInit {
       );
       await this.clearStripeQueryParams();
       await this.load();
+      return result.subscription.end ?? null;
     } catch (error) {
       this.subscriptionTone.set('danger');
       this.subscriptionMessage.set(errorMessage(error));
       await this.clearStripeQueryParams();
+      return null;
     } finally {
       this.confirmingStripe.set(false);
     }

@@ -41,12 +41,17 @@ class TestTier2F14ObservabilityBoundaries(unittest.TestCase):
         self.assertRegex(mon, r"evaluation_periods\s*=\s*2\b")
 
     def test_t2_f14_04_webhook_rejection_emits_payment_failed_telemetry(self) -> None:
+        d_tok, _, _ = register_doctor(self.client)
+        chk = self.client.post("/api/subscriptions/checkout", {}, token=d_tok)
+        # El modo de pago real se detecta desde la sesión de checkout, no de la bandera CLI:
+        # en test/live el endpoint del webhook debe rechazar con 400/401 (nunca 503).
+        simulado = chk.status == 201 and chk.data.get("mode") == "simulado"
         bad = self.client.post(
             "/api/webhooks/stripe",
             raw_bytes=b'{"type":"checkout.session.completed"}',
             headers={"Content-Type": "application/json", "Stripe-Signature": "t=1,v1=bad"},
         )
-        if bad.status == 503:
+        if simulado:
             # Modo simulado: sin secreto de webhooks configurado, el endpoint rechaza sin telemetría.
             self.assertIn(bad.status, (400, 401, 503))
             return
