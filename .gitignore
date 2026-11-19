@@ -17,3 +17,6 @@ __pycache__/
 backend/lambda.zip
 backend/lambda-package.zip
 backend/.lambda-build/
+.terraform.tfstate.lock.info
+test-results/
+playwright-report/

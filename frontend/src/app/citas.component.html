@@ -1,90 +1,301 @@
-<section class="panel">
-  <div class="row">
-    <h2>{{ api.isDoctor() ? 'Agenda del consultorio' : 'Mis citas' }}</h2>
-    <button type="button" class="secondary" (click)="load()">Actualizar</button>
-  </div>
-  @if (message()) { <p role="status" class="notice">{{ message() }}</p> }
-
-  <div class="table-scroll" role="region" aria-label="Lista de citas" tabindex="0">
-  <table>
-    <caption class="sr-only">Citas programadas y su estado actual</caption>
-    <thead>
-      <tr>
-        <th scope="col">Fecha y hora</th>
-        <th scope="col">{{ api.isDoctor() ? 'Paciente' : 'Profesional' }}</th>
-        <th scope="col">Motivo</th>
-        <th scope="col">Estado</th>
-        <th scope="col">Acciones</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (a of appointments(); track a.id) {
-        <tr>
-          <td>{{ formatDateTime(a.dateTime) }}</td>
-          <td>{{ api.isDoctor() ? a.patientName : a.doctorName + ' · ' + a.specialty }}</td>
-          <td>{{ a.reason || '—' }}</td>
-          <td><span class="badge" [attr.data-status]="a.status">{{ a.status }}</span></td>
-          <td class="actions">
-            @if (api.isDoctor() && a.status === 'PENDIENTE' && canChange(a)) {
-              <button type="button" class="secondary" [disabled]="updatingId() === a.id" (click)="changeStatus(a, 'CONFIRMADA')">Confirmar</button>
-            }
-            @if (canChange(a)) {
-              <button type="button" class="danger" [disabled]="updatingId() === a.id" (click)="changeStatus(a, 'CANCELADA')">Cancelar</button>
-              <button type="button" class="secondary" [disabled]="updatingId() === a.id" (click)="beginReschedule(a)">Reprogramar</button>
-            }
-            @if (canAttend(a)) {
-              <button type="button" (click)="attend(a)">Registrar consulta</button>
-            }
-          </td>
-        </tr>
-      } @empty {
-        <tr><td colspan="5">No hay citas.</td></tr>
-      }
-    </tbody>
-  </table>
-  </div>
-</section>
-
-@if (rescheduling(); as appointment) {
-  <section class="panel" aria-labelledby="reschedule-title">
-    <h2 id="reschedule-title">Reprogramar cita</h2>
-    <p>Elige una nueva fecha para tu cita con {{ api.isDoctor() ? appointment.patientName : appointment.doctorName }}.</p>
-    <div class="row reschedule-controls">
-      <label>Nueva fecha <input type="date" name="rescheduleDate" [(ngModel)]="rescheduleDate" [min]="minDate" (change)="loadRescheduleSlots()"></label>
-      <button type="button" class="secondary" (click)="loadRescheduleSlots()">Consultar horarios</button>
-    </div>
-    <p role="status" aria-live="polite">{{ rescheduleMessage() }}</p>
-    @if (rescheduleSlots().length) {
-      <label>Horario disponible
-        <select name="rescheduleSlot" [(ngModel)]="selectedSlot" required>
-          <option value="">Selecciona una hora</option>
-          @for (slot of rescheduleSlots(); track slot) { <option [value]="slot">{{ formatTime(slot) }}</option> }
-        </select>
-      </label>
-      <div class="row"><button type="button" [disabled]="!selectedSlot || savingReschedule()" (click)="saveReschedule()">{{ savingReschedule() ? 'Guardando…' : 'Confirmar nueva fecha' }}</button>
-        <button type="button" class="secondary" (click)="rescheduling.set(null)">Cerrar</button></div>
-    }
-  </section>
-}
-
-@if (attending(); as a) {
-  <section class="panel">
-    <h2>Consulta de {{ a.patientName }}</h2>
-    <p class="muted">{{ formatDateTime(a.dateTime) }} · Requiere que el paciente te haya dado acceso a su expediente.</p>
-    <form class="stack" #consultationForm="ngForm" (ngSubmit)="saveConsultation()">
-      <label>Diagnóstico
-        <textarea name="diagnosis" [(ngModel)]="diagnosis" required minlength="3" rows="3"></textarea>
-      </label>
-      <label>Tratamiento e indicaciones
-        <textarea name="treatment" [(ngModel)]="treatment" required minlength="3" rows="3"></textarea>
-      </label>
-      <label>Notas (opcional)
-        <textarea name="notes" [(ngModel)]="notes" rows="2"></textarea>
-      </label>
-      <div class="row">
-        <button type="submit" [disabled]="savingConsultation() || consultationForm.invalid">{{ savingConsultation() ? 'Guardando…' : 'Guardar consulta y generar receta' }}</button>
-        <button type="button" class="secondary" (click)="attending.set(null)">Cancelar</button>
+<div class="stack">
+  <ds-card padding="lg">
+    <ds-page-header
+      [eyebrow]="api.isDoctor() ? 'Agenda médica' : 'Seguimiento de citas'"
+      [title]="api.isDoctor() ? 'Agenda del consultorio' : 'Mis citas'"
+      subtitle="Consulta el estado de tus citas, confirma o reprograma horarios disponibles."
+      [headingLevel]="2"
+    >
+      <div dsPageActions>
+        <ds-button variant="secondary" size="sm" [loading]="loading()" (pressed)="load()">
+          Actualizar
+        </ds-button>
       </div>
-    </form>
-  </section>
-}
+    </ds-page-header>
+
+    <div class="ds-tablist" role="tablist" aria-label="Filtrar citas por estado">
+      @for (tab of filterTabs; track tab.key) {
+        <button
+          type="button"
+          [id]="'citas-tab-' + tab.key"
+          role="tab"
+          class="ds-tab"
+          [attr.aria-selected]="statusFilter() === tab.key"
+          [attr.tabindex]="statusFilter() === tab.key ? 0 : -1"
+          (click)="statusFilter.set(tab.key)"
+          (keydown)="onFilterTabKeydown($event, $index)"
+        >
+          {{ tab.label }} ({{ counts()[tab.key] }})
+        </button>
+      }
+    </div>
+
+    @if (message()) {
+      <div style="margin-bottom: var(--space-4);">
+        <ds-alert-banner
+          [tone]="messageTone()"
+          [message]="message()"
+          [actionLabel]="lastConsultation()?.downloadUrl ? 'Descargar receta PDF' : ''"
+          [dismissible]="true"
+          (action)="lastConsultation()?.downloadUrl && openPrescriptionDownload(lastConsultation()!.downloadUrl!)"
+          (dismissed)="message.set('')"
+        />
+      </div>
+    }
+
+    @if (loading()) {
+      <ds-skeleton variant="row" [count]="4" label="Cargando citas" />
+    } @else if (loadError()) {
+      <ds-alert-banner
+        tone="danger"
+        title="No pudimos cargar las citas"
+        [message]="loadError()"
+        actionLabel="Reintentar"
+        (action)="load()"
+      />
+    } @else if (filteredAppointments().length === 0) {
+      <ds-empty-state
+        icon="calendar"
+        [title]="statusFilter() === 'TODAS' ? 'Aún no tienes citas registradas' : 'Sin citas en este estado'"
+        [description]="
+          statusFilter() === 'TODAS'
+            ? (api.isDoctor()
+                ? 'Publica tu horario semanal en Mi panel para empezar a recibir pacientes.'
+                : 'Explora el directorio de profesionales para agendar tu próxima consulta.')
+            : 'No hay citas registradas bajo este filtro.'
+        "
+        [actionLabel]="
+          statusFilter() !== 'TODAS'
+            ? 'Ver todas las citas'
+            : (api.isDoctor() ? 'Ir a Mi panel' : 'Buscar profesionales')
+        "
+        (action)="openEmptyCta()"
+      />
+    } @else {
+      <div class="table-scroll" role="region" aria-label="Lista de citas" tabindex="0">
+        <table>
+          <caption class="sr-only">Citas programadas y su estado actual</caption>
+          <thead>
+            <tr>
+              <th scope="col">Fecha y hora</th>
+              <th scope="col">{{ api.isDoctor() ? 'Paciente' : 'Profesional' }}</th>
+              <th scope="col">Motivo</th>
+              <th scope="col">Estado</th>
+              <th scope="col">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (a of filteredAppointments(); track a.id) {
+              <tr>
+                <td>{{ formatDateTime(a.dateTime) }}</td>
+                <td>{{ api.isDoctor() ? a.patientName : a.doctorName + ' · ' + a.specialty }}</td>
+                <td>{{ a.reason || '—' }}</td>
+                <td><ds-badge [status]="a.status" /></td>
+                <td class="actions">
+                  @if (api.isDoctor() && a.status === 'PENDIENTE' && canChange(a)) {
+                    <ds-button
+                      variant="secondary"
+                      size="sm"
+                      [loading]="updatingId() === a.id"
+                      (pressed)="confirmAppointment(a)"
+                    >
+                      Confirmar
+                    </ds-button>
+                  }
+                  @if (canChange(a)) {
+                    <ds-button
+                      variant="secondary"
+                      size="sm"
+                      [disabled]="updatingId() === a.id"
+                      (pressed)="beginReschedule(a)"
+                    >
+                      Reprogramar
+                    </ds-button>
+                    <ds-button
+                      variant="danger"
+                      size="sm"
+                      [disabled]="updatingId() === a.id"
+                      (pressed)="requestCancel(a)"
+                    >
+                      Cancelar
+                    </ds-button>
+                  }
+                  @if (canAttend(a)) {
+                    <ds-button variant="primary" size="sm" (pressed)="attend(a)">
+                      Registrar consulta
+                    </ds-button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </ds-card>
+
+  @if (attending(); as a) {
+    <ds-card padding="lg">
+      <ds-page-header
+        eyebrow="Registro clínico"
+        [title]="'Consulta de ' + (a.patientName || 'Paciente')"
+        [subtitle]="formatDateTime(a.dateTime)"
+        [headingLevel]="2"
+      >
+        <div dsPageActions>
+          <ds-button variant="ghost" size="sm" (pressed)="attending.set(null)">Cerrar</ds-button>
+        </div>
+      </ds-page-header>
+
+      <div class="stack">
+        @switch (patientConsentStatus()) {
+          @case ('checking') {
+            <ds-skeleton variant="row" [count]="1" label="Verificando consentimiento del paciente" />
+          }
+          @case ('granted') {
+            <ds-alert-banner
+              tone="success"
+              title="Consentimiento vigente"
+              message="El paciente autorizó el acceso a su expediente. Puedes registrar la consulta y emitir la receta."
+            />
+          }
+          @case ('missing') {
+            <ds-alert-banner
+              tone="danger"
+              title="Consentimiento pendiente"
+              message="Este paciente aún no te otorga permiso en Mi expediente. Solicítale que active el consentimiento antes de guardar la consulta."
+              actionLabel="Verificar nuevamente"
+              (action)="refreshAuthorizedPatients()"
+            />
+          }
+          @default {
+            <ds-alert-banner
+              tone="warning"
+              title="No se pudo verificar el consentimiento"
+              message="Asegúrate de contar con tu suscripción activa y permiso del paciente antes de registrar la consulta."
+              actionLabel="Verificar nuevamente"
+              (action)="refreshAuthorizedPatients()"
+            />
+          }
+        }
+
+        <form class="stack" #consultationForm="ngForm" (ngSubmit)="saveConsultation()">
+          <ds-field label="Diagnóstico" [required]="true" hint="Mínimo 3 caracteres.">
+            <textarea dsControl name="diagnosis" [(ngModel)]="diagnosis" required minlength="3" rows="3"></textarea>
+          </ds-field>
+          <ds-field label="Tratamiento e indicaciones" [required]="true" hint="Mínimo 3 caracteres.">
+            <textarea dsControl name="treatment" [(ngModel)]="treatment" required minlength="3" rows="3"></textarea>
+          </ds-field>
+          <ds-field label="Notas clínicas (opcional)">
+            <textarea dsControl name="notes" [(ngModel)]="notes" rows="2"></textarea>
+          </ds-field>
+          <div class="row-start">
+            <ds-button
+              type="submit"
+              variant="primary"
+              [loading]="savingConsultation()"
+              [disabled]="consultationForm.invalid || patientConsentStatus() === 'missing' || patientConsentStatus() === 'checking'"
+            >
+              {{ savingConsultation() ? 'Guardando…' : 'Guardar consulta y generar receta' }}
+            </ds-button>
+            <ds-button variant="secondary" [disabled]="savingConsultation()" (pressed)="attending.set(null)">
+              Cancelar
+            </ds-button>
+          </div>
+        </form>
+      </div>
+    </ds-card>
+  }
+</div>
+
+<ds-modal
+  [open]="!!pendingCancel()"
+  title="Cancelar cita"
+  tone="danger"
+  confirmLabel="Sí, cancelar cita"
+  cancelLabel="Conservar cita"
+  [busy]="canceling()"
+  (closed)="pendingCancel.set(null)"
+  (confirmed)="confirmCancel()"
+>
+  @if (pendingCancel(); as cancelTarget) {
+    <p>
+      ¿Confirmas que deseas cancelar la cita del
+      <strong>{{ formatDateTime(cancelTarget.dateTime) }}</strong>
+      con {{ api.isDoctor() ? cancelTarget.patientName : cancelTarget.doctorName }}?
+    </p>
+    <p class="muted">El horario quedará disponible nuevamente y se enviará un aviso a la otra persona.</p>
+  }
+</ds-modal>
+
+<ds-modal
+  [open]="!!rescheduling()"
+  title="Reprogramar cita"
+  [showDefaultActions]="false"
+  [busy]="savingReschedule()"
+  (closed)="closeReschedule()"
+>
+  @if (rescheduling(); as appointment) {
+    <div class="stack">
+      <p style="margin: 0;">
+        Elige una nueva fecha para tu cita con
+        <strong>{{ api.isDoctor() ? appointment.patientName : appointment.doctorName }}</strong>.
+      </p>
+
+      <div class="grid-form">
+        <ds-field label="Nueva fecha">
+          <input
+            dsControl
+            type="date"
+            name="rescheduleDate"
+            [(ngModel)]="rescheduleDate"
+            [min]="minDate"
+            [max]="maxDate"
+            (change)="loadRescheduleSlots()"
+          />
+        </ds-field>
+        <div>
+          <ds-button variant="secondary" [loading]="loadingRescheduleSlots()" (pressed)="loadRescheduleSlots()">
+            Consultar horarios
+          </ds-button>
+        </div>
+      </div>
+
+      @if (loadingRescheduleSlots()) {
+        <ds-skeleton variant="row" [count]="1" label="Consultando disponibilidad" />
+      } @else if (rescheduleMessage()) {
+        <ds-alert-banner
+          [tone]="rescheduleSlots().length ? 'info' : 'warning'"
+          [message]="rescheduleMessage()"
+        />
+      }
+
+      @if (rescheduleSlots().length) {
+        <ds-field label="Horario disponible" [required]="true">
+          <select dsControl name="rescheduleSlot" [(ngModel)]="selectedSlot">
+            <option value="">Selecciona una hora</option>
+            @for (slot of rescheduleSlots(); track slot) {
+              <option [value]="slot">{{ formatTime(slot) }}</option>
+            }
+          </select>
+        </ds-field>
+      }
+    </div>
+  }
+
+  <div dsModalActions class="row-start">
+    <ds-button variant="secondary" [disabled]="savingReschedule()" (pressed)="closeReschedule()">
+      Cerrar
+    </ds-button>
+    @if (rescheduleSlots().length) {
+      <ds-button
+        variant="primary"
+        [disabled]="!selectedSlot"
+        [loading]="savingReschedule()"
+        (pressed)="saveReschedule()"
+      >
+        {{ savingReschedule() ? 'Guardando…' : 'Confirmar nueva fecha' }}
+      </ds-button>
+    }
+  </div>
+</ds-modal>

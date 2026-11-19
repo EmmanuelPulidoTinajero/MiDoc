@@ -1,118 +1,518 @@
 @if (loading()) {
-  <section class="panel" role="status" aria-live="polite">Cargando tu consultorio…</section>
+  <ds-card padding="lg">
+    <ds-skeleton variant="card" [count]="3" label="Cargando tu panel profesional" />
+  </ds-card>
 } @else if (loadFailed()) {
-  <section class="panel"><p role="alert">{{ subscriptionMessage() }}</p>
-    <button type="button" (click)="load()">Intentar de nuevo</button></section>
+  <ds-card padding="lg">
+    <ds-alert-banner
+      tone="danger"
+      title="No pudimos cargar tu panel"
+      [message]="subscriptionMessage()"
+      actionLabel="Intentar de nuevo"
+      (action)="load()"
+    />
+  </ds-card>
 } @else {
-<section class="panel">
-  <h2>Suscripción</h2>
-  @if (subscription(); as s) {
-    @if (s.active) {
-      <p><span class="badge" data-status="CONFIRMADA">ACTIVA</span> ${{ s.amount }} USD/mes · vigente del {{ s.start }} al {{ s.end }}
-        @if (s.cardLast4) { · {{ s.cardBrand }} •••• {{ s.cardLast4 }} }</p>
-    } @else {
-      <p><span class="badge" data-status="CANCELADA">INACTIVA</span> Tu suscripción venció el {{ s.end }}.</p>
-    }
-  } @else {
-    <p><span class="badge" data-status="PENDIENTE">SIN SUSCRIPCIÓN</span> Suscríbete para aparecer en el marketplace y usar el panel.</p>
-  }
-  <p class="notice">Este cobro es una simulación para la demostración. MiDoc no procesa pagos reales ni debes introducir datos bancarios reales.</p>
-  <form class="grid-form" (ngSubmit)="pay()">
-    <label>Titular <input name="cardHolder" [(ngModel)]="card.cardHolder" required></label>
-    <label>Tarjeta de prueba <input name="cardNumber" [(ngModel)]="card.cardNumber" required autocomplete="off" inputmode="numeric"></label>
-    <label>Mes <input type="number" name="expMonth" min="1" max="12" [(ngModel)]="card.expMonth"></label>
-    <label>Año <input type="number" name="expYear" [(ngModel)]="card.expYear"></label>
-    <label>CVV <input name="cvv" [(ngModel)]="card.cvv" maxlength="4" autocomplete="off"></label>
-    <button type="submit" [disabled]="paying()">{{ paying() ? 'Validando pago de prueba…' : subscription()?.active ? 'Pagar otro mes ($20 USD)' : 'Pagar $20 USD' }}</button>
-  </form>
-  <p class="muted">Aprobada: 4242 4242 4242 4242 · Rechazada: 4000 0000 0000 0002.</p>
-  @if (subscriptionMessage()) { <p role="status" class="notice">{{ subscriptionMessage() }}</p> }
-</section>
+  <div class="stack">
+    <ds-card padding="lg">
+      <ds-page-header
+        eyebrow="Suscripción profesional"
+        title="Membresía MiDoc"
+        subtitle="Activa tu presencia en el directorio médico, agenda en línea, expedientes autorizados, inventario y promociones."
+        [headingLevel]="2"
+      >
+        <div dsPageActions class="row-start">
+          <ds-badge [status]="subscriptionStatusKey()" />
+          @if (paymentMode() === 'simulado') {
+            <ds-badge tone="warning">Pago simulado (sin Stripe)</ds-badge>
+          } @else {
+            <ds-badge [tone]="paymentMode() === 'live' ? 'info' : 'warning'">
+              {{ paymentMode() === 'live' ? 'Producción (Stripe Live)' : 'Modo prueba (Stripe Sandbox)' }}
+            </ds-badge>
+          }
+        </div>
+      </ds-page-header>
 
-<section class="panel" aria-labelledby="inventory-title">
-  <h2 id="inventory-title">Inventario del consultorio</h2>
-  <p class="muted">Registra y actualiza existencias de insumos. Este inventario es privado para tu consultorio.</p>
-  @if (subscription()?.active) {
-  <form class="grid-form" (ngSubmit)="saveInventoryItem()">
-    <label>Insumo <input name="inventoryName" [(ngModel)]="inventoryForm.name" maxlength="120" required></label>
-    <label>Cantidad <input type="number" name="inventoryQuantity" [(ngModel)]="inventoryForm.quantity" min="0" max="100000000" step="0.01" required></label>
-    <label>Unidad <input name="inventoryUnit" [(ngModel)]="inventoryForm.unit" maxlength="30" required placeholder="piezas, cajas, ml"></label>
-    <button type="submit" [disabled]="savingInventory()">{{ savingInventory() ? 'Guardando…' : 'Guardar existencias' }}</button>
-  </form>
-  @if (inventoryMessage()) { <p role="status" aria-live="polite">{{ inventoryMessage() }}</p> }
-  <ul class="compact">
-    @for (item of inventory(); track item.id) {
-      <li><strong>{{ item.name }}</strong> · {{ item.quantity }} {{ item.unit }}
-        <button type="button" class="link danger-text" (click)="deleteInventoryItem(item)">Eliminar {{ item.name }}</button></li>
-    } @empty { <li>No hay insumos registrados.</li> }
-  </ul>
-  } @else {
-    <p class="notice">Activa la suscripción de demostración para administrar inventario.</p>
-  }
-</section>
+      @if (paymentMode() === 'simulado') {
+        <ds-alert-banner
+          tone="info"
+          title="Pagos en modo simulado"
+          message="La suscripción se activa sin cargo real ni llave de Stripe. Cuando se configure la llave sk_test_, el checkout abrirá Stripe Checkout y el cobro será real en modo de prueba."
+        />
+      }
 
-<section class="panel" aria-labelledby="promotions-title">
-  <h2 id="promotions-title">Promociones del marketplace</h2>
-  <p class="muted">Publica ofertas con fechas y descuento claros. No se realizan cobros ni canjes automáticos.</p>
-  @if (subscription()?.active) {
-  <form class="grid-form" (ngSubmit)="savePromotion()">
-    <label>Título <input name="promotionTitle" [(ngModel)]="promotionForm.title" maxlength="120" required></label>
-    <label>Descuento (%) <input type="number" name="discount" [(ngModel)]="promotionForm.discountPercent" min="1" max="90" required></label>
-    <label>Inicia <input type="date" name="promotionStart" [(ngModel)]="promotionForm.start" required></label>
-    <label>Termina <input type="date" name="promotionEnd" [(ngModel)]="promotionForm.end" [min]="promotionForm.start" required></label>
-    <label class="wide">Descripción <textarea name="promotionDescription" [(ngModel)]="promotionForm.description" maxlength="500" rows="2"></textarea></label>
-    <button type="submit" [disabled]="savingPromotion()">{{ savingPromotion() ? 'Publicando…' : 'Publicar promoción' }}</button>
-  </form>
-  @if (promotionMessage()) { <p role="status" aria-live="polite">{{ promotionMessage() }}</p> }
-  <ul class="compact">
-    @for (promotion of promotions(); track promotion.id) {
-      <li><strong>{{ promotion.title }}</strong> · {{ promotion.discountPercent }}% · {{ promotion.start }} al {{ promotion.end }}
-        <p>{{ promotion.description }}</p>
-        <button type="button" class="link danger-text" (click)="deletePromotion(promotion)">Retirar {{ promotion.title }}</button></li>
-    } @empty { <li>No hay promociones publicadas.</li> }
-  </ul>
-  } @else {
-    <p class="notice">Activa la suscripción de demostración para publicar promociones.</p>
-  }
-</section>
+      <div class="stack">
+        @if (subscription(); as s) {
+          @if (s.active) {
+            <p style="margin: 0;">
+              Plan mensual: <strong class="tabular-nums">${{ s.amount }} USD / mes</strong> · vigente del
+              <strong>{{ s.start }}</strong> al <strong>{{ s.end }}</strong>
+              @if (s.cardLast4) { · {{ s.cardBrand || 'Tarjeta' }} •••• {{ s.cardLast4 }} }
+            </p>
+          } @else if (s.status === 'PENDIENTE') {
+            <ds-alert-banner
+              tone="warning"
+              title="Pago pendiente de confirmación"
+              message="Iniciaste el proceso de pago en Stripe Checkout pero aún no se confirma. Completa el pago para activar tu perfil público."
+            />
+          } @else {
+            <ds-alert-banner
+              tone="warning"
+              title="Suscripción vencida"
+              [message]="'Tu suscripción venció el ' + (s.end || '') + '. Renuévala en Stripe Checkout para reactivar tu perfil público.'"
+            />
+          }
+        } @else {
+          <ds-alert-banner
+            tone="info"
+            title="Activa tu consultorio en MiDoc"
+            message="Suscríbete por $20.00 USD al mes (30 días) mediante Stripe Checkout para aparecer en el directorio y gestionar tus servicios."
+          />
+        }
 
-<section class="panel">
-  <h2>Horario semanal de atención</h2>
-  @for (block of blocks; track $index) {
-    <fieldset class="schedule-block">
-      <legend>Bloque {{ $index + 1 }}</legend>
-      <label>Día
-      <select [name]="'day' + $index" [(ngModel)]="block.day">
-        @for (d of days; track d.value) { <option [ngValue]="d.value">{{ d.name }}</option> }
-      </select>
-      </label>
-      <label>Hora de inicio <input type="time" [name]="'start' + $index" [(ngModel)]="block.start"></label>
-      <label>Hora de fin <input type="time" [name]="'end' + $index" [(ngModel)]="block.end"></label>
-      <button type="button" class="link danger-text" (click)="removeBlock($index)">Quitar</button>
-    </fieldset>
-  } @empty { <p class="muted">Sin horario: los pacientes no pueden agendar contigo.</p> }
-  <div class="row">
-    <button type="button" class="secondary" (click)="addBlock()">Agregar bloque</button>
-    <button type="button" [disabled]="savingSchedule()" (click)="saveSchedule()">{{ savingSchedule() ? 'Guardando…' : 'Publicar horario' }}</button>
+        <div class="row">
+          <div>
+            <strong>$20.00 USD / mes (30 días)</strong>
+            <p class="muted" style="margin: 0; font-size: var(--text-sm);">
+              Pago procesado directamente por Stripe Checkout sin almacenar datos bancarios en MiDoc.
+            </p>
+          </div>
+          <ds-button
+            variant="primary"
+            [loading]="paying() || confirmingStripe()"
+            (pressed)="startStripeCheckout()"
+          >
+            {{
+              confirmingStripe()
+                ? 'Confirmando pago…'
+                : paying()
+                  ? 'Redirigiendo a Stripe…'
+                  : subscription()?.active
+                    ? 'Renovar con Stripe ($20 USD)'
+                    : 'Suscribirse con Stripe ($20 USD)'
+            }}
+          </ds-button>
+        </div>
+
+        @if (subscriptionMessage()) {
+          <ds-alert-banner [tone]="subscriptionTone()" [message]="subscriptionMessage()" />
+        }
+
+        @if (subscriptionHistory().length) {
+          <div>
+            <h3>Historial de pagos</h3>
+            <div class="table-scroll" role="region" aria-label="Historial de pagos de suscripción" tabindex="0">
+              <table>
+                <caption class="sr-only">Pagos registrados en Stripe para tu suscripción</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Vigencia</th>
+                    <th scope="col">Referencia</th>
+                    <th scope="col">Método</th>
+                    <th scope="col">Entorno</th>
+                    <th scope="col" class="num">Monto</th>
+                    <th scope="col">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (payment of subscriptionHistory(); track payment.id ?? payment.stripeSessionId ?? $index) {
+                    <tr>
+                      <td>{{ payment.start }} – {{ payment.end }}</td>
+                      <td class="mono">{{ payment.paymentRef || payment.stripeSessionId || '—' }}</td>
+                      <td>
+                        @if (payment.cardLast4) {
+                          {{ payment.cardBrand || 'Tarjeta' }} •••• {{ payment.cardLast4 }}
+                        } @else {
+                          Stripe Checkout
+                        }
+                      </td>
+                      <td>
+                        @if (payment.paymentMode === 'simulado') {
+                          <ds-badge tone="warning">Simulado</ds-badge>
+                        } @else {
+                          <ds-badge [tone]="payment.paymentMode === 'live' ? 'info' : 'warning'">
+                            {{ payment.paymentMode === 'live' ? 'Live' : 'Test' }}
+                          </ds-badge>
+                        }
+                      </td>
+                      <td class="num">${{ payment.amount }} USD</td>
+                      <td><ds-badge [status]="payment.status" /></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+      </div>
+    </ds-card>
+
+    <ds-card padding="lg">
+      <ds-page-header
+        eyebrow="Perfil profesional"
+        title="Datos del consultorio y contraseña"
+        subtitle="Mantén actualizada tu información pública, tarifa de consulta y credenciales."
+        [headingLevel]="2"
+      />
+      <form class="grid-form" (ngSubmit)="saveProfile()">
+        <ds-field label="Nombre completo o clínica" [required]="true">
+          <input dsControl name="nombreCompleto" [(ngModel)]="profileForm.nombreCompleto" required />
+        </ds-field>
+        <ds-field label="Teléfono">
+          <input dsControl name="telefono" [(ngModel)]="profileForm.telefono" />
+        </ds-field>
+        <ds-field label="Especialidad" [required]="true">
+          <input dsControl name="especialidad" [(ngModel)]="profileForm.especialidad" required />
+        </ds-field>
+        <ds-field label="Dirección del consultorio" [required]="true">
+          <input dsControl name="ubicacion" [(ngModel)]="profileForm.ubicacion" required />
+        </ds-field>
+        <ds-field label="Ciudad">
+          <input dsControl name="ciudad" [(ngModel)]="profileForm.ciudad" />
+        </ds-field>
+        <ds-field label="Precio de consulta (MXN)" [required]="true">
+          <input dsControl type="number" name="precioConsulta" min="0" max="100000" [(ngModel)]="profileForm.precioConsulta" required />
+        </ds-field>
+        <ds-field label="Duración de cita (minutos)" [required]="true">
+          <input dsControl type="number" name="duracionCitaMin" min="10" max="240" [(ngModel)]="profileForm.duracionCitaMin" required />
+        </ds-field>
+        <ds-field class="wide" label="Biografía o descripción de servicios">
+          <textarea dsControl name="biografia" rows="3" [(ngModel)]="profileForm.biografia"></textarea>
+        </ds-field>
+        <ds-field label="Contraseña actual (opcional)" hint="Sólo si deseas cambiar tu contraseña.">
+          <input dsControl type="password" name="currentPassword" [(ngModel)]="profileForm.currentPassword" autocomplete="current-password" />
+        </ds-field>
+        <ds-field label="Nueva contraseña (opcional)" hint="Mínimo 8 caracteres con letras y números.">
+          <input dsControl type="password" name="newPassword" [(ngModel)]="profileForm.newPassword" autocomplete="new-password" />
+        </ds-field>
+        <div class="wide">
+          <ds-button type="submit" variant="primary" [loading]="savingProfile()">
+            {{ savingProfile() ? 'Guardando perfil…' : 'Guardar perfil' }}
+          </ds-button>
+        </div>
+      </form>
+      @if (profileMessage()) {
+        <div style="margin-top: var(--space-3);">
+          <ds-alert-banner [tone]="profileTone()" [message]="profileMessage()" />
+        </div>
+      }
+    </ds-card>
+
+    <ds-card padding="lg">
+      <ds-page-header
+        eyebrow="Disponibilidad"
+        title="Horario semanal de atención"
+        subtitle="Define los bloques de día y hora en los que los pacientes pueden reservar contigo."
+        [headingLevel]="2"
+      />
+      @for (block of blocks; track $index) {
+        <fieldset class="schedule-block">
+          <legend>Bloque {{ $index + 1 }}</legend>
+          <ds-field label="Día">
+            <select dsControl [name]="'day' + $index" [(ngModel)]="block.day">
+              @for (d of days; track d.value) { <option [ngValue]="d.value">{{ d.name }}</option> }
+            </select>
+          </ds-field>
+          <ds-field label="Hora de inicio">
+            <input dsControl type="time" [name]="'start' + $index" [(ngModel)]="block.start" />
+          </ds-field>
+          <ds-field label="Hora de fin">
+            <input dsControl type="time" [name]="'end' + $index" [(ngModel)]="block.end" />
+          </ds-field>
+          <div>
+            <ds-button variant="danger" size="sm" (pressed)="removeBlock($index)">Quitar</ds-button>
+          </div>
+        </fieldset>
+      } @empty {
+        <ds-empty-state
+          icon="calendar"
+          title="Sin horario publicado"
+          description="Agrega al menos un bloque semanal para habilitar reservas en el directorio."
+        />
+      }
+
+      <div class="row" style="margin-top: var(--space-3);">
+        <ds-button variant="secondary" (pressed)="addBlock()">Agregar bloque</ds-button>
+        <ds-button variant="primary" [loading]="savingSchedule()" (pressed)="saveSchedule()">
+          {{ savingSchedule() ? 'Guardando…' : 'Publicar horario' }}
+        </ds-button>
+      </div>
+      @if (scheduleMessage()) {
+        <div style="margin-top: var(--space-3);">
+          <ds-alert-banner [tone]="scheduleTone()" [message]="scheduleMessage()" />
+        </div>
+      }
+    </ds-card>
+
+    <ds-card padding="lg">
+      <ds-page-header
+        eyebrow="Operación interna"
+        title="Inventario del consultorio"
+        subtitle="Registra y actualiza existencias de insumos médicos."
+        [headingLevel]="2"
+      />
+      @if (subscription()?.active) {
+        <div class="stack">
+          <form class="grid-form" (ngSubmit)="saveInventoryItem()">
+            <ds-field label="Insumo" [required]="true">
+              <input dsControl name="inventoryName" [(ngModel)]="inventoryForm.name" maxlength="120" required />
+            </ds-field>
+            <ds-field label="Cantidad" [required]="true">
+              <input dsControl type="number" name="inventoryQuantity" [(ngModel)]="inventoryForm.quantity" min="0" max="100000000" step="0.01" required />
+            </ds-field>
+            <ds-field label="Unidad" [required]="true">
+              <input dsControl name="inventoryUnit" [(ngModel)]="inventoryForm.unit" maxlength="30" required placeholder="piezas, cajas, ml" />
+            </ds-field>
+            <div>
+              <ds-button type="submit" variant="primary" [loading]="savingInventory()">
+                {{ savingInventory() ? 'Guardando…' : 'Guardar existencias' }}
+              </ds-button>
+            </div>
+          </form>
+
+          @if (inventoryMessage()) {
+            <ds-alert-banner [tone]="inventoryTone()" [message]="inventoryMessage()" />
+          }
+
+          @if (inventory().length) {
+            <ul class="compact">
+              @for (item of inventory(); track item.id) {
+                <li>
+                  @if (editingInventoryId() === item.id) {
+                    <form class="grid-form" (ngSubmit)="saveEditInventory()">
+                      <ds-field label="Insumo">
+                        <input dsControl name="editInvName" [(ngModel)]="editInventoryForm.name" readonly />
+                      </ds-field>
+                      <ds-field label="Cantidad">
+                        <input dsControl type="number" name="editInvQty" [(ngModel)]="editInventoryForm.quantity" min="0" step="0.01" required />
+                      </ds-field>
+                      <ds-field label="Unidad">
+                        <input dsControl name="editInvUnit" [(ngModel)]="editInventoryForm.unit" maxlength="30" required />
+                      </ds-field>
+                      <div class="row-start">
+                        <ds-button type="submit" variant="primary" size="sm" [loading]="savingInventory()">Guardar</ds-button>
+                        <ds-button variant="ghost" size="sm" (pressed)="editingInventoryId.set(null)">Cancelar</ds-button>
+                      </div>
+                    </form>
+                  } @else {
+                    <div class="row">
+                      <span><strong>{{ item.name }}</strong> · {{ item.quantity }} {{ item.unit }}</span>
+                      <div class="row-start">
+                        <ds-button variant="secondary" size="sm" (pressed)="startEditInventory(item)">
+                          Editar
+                        </ds-button>
+                        <ds-button variant="danger" size="sm" (pressed)="pendingDeleteInventory.set(item)">
+                          Eliminar
+                        </ds-button>
+                      </div>
+                    </div>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <ds-empty-state
+              icon="inbox"
+              title="Sin insumos registrados"
+              description="Agrega tu primer insumo arriba para llevar el control de existencias."
+            />
+          }
+        </div>
+      } @else {
+        <ds-alert-banner
+          tone="info"
+          message="Activa tu suscripción mensual para administrar el inventario de tu consultorio."
+        />
+      }
+    </ds-card>
+
+    <ds-card padding="lg">
+      <ds-page-header
+        eyebrow="Visibilidad en directorio"
+        title="Promociones del marketplace"
+        subtitle="Publica descuentos vigentes con fechas claras."
+        [headingLevel]="2"
+      />
+      @if (subscription()?.active) {
+        <div class="stack">
+          <form class="grid-form" (ngSubmit)="savePromotion()">
+            <ds-field label="Título" [required]="true">
+              <input dsControl name="promotionTitle" [(ngModel)]="promotionForm.title" maxlength="120" required />
+            </ds-field>
+            <ds-field label="Descuento (%)" [required]="true">
+              <input dsControl type="number" name="discount" [(ngModel)]="promotionForm.discountPercent" min="1" max="90" required />
+            </ds-field>
+            <ds-field label="Inicia" [required]="true">
+              <input dsControl type="date" name="promotionStart" [(ngModel)]="promotionForm.start" required />
+            </ds-field>
+            <ds-field label="Termina" [required]="true">
+              <input dsControl type="date" name="promotionEnd" [(ngModel)]="promotionForm.end" [min]="promotionForm.start" required />
+            </ds-field>
+            <ds-field class="wide" label="Descripción">
+              <textarea dsControl name="promotionDescription" [(ngModel)]="promotionForm.description" maxlength="500" rows="2"></textarea>
+            </ds-field>
+            <div>
+              <ds-button type="submit" variant="primary" [loading]="savingPromotion()">
+                {{ savingPromotion() ? 'Publicando…' : 'Publicar promoción' }}
+              </ds-button>
+            </div>
+          </form>
+
+          @if (promotionMessage()) {
+            <ds-alert-banner [tone]="promotionTone()" [message]="promotionMessage()" />
+          }
+
+          @if (promotions().length) {
+            <ul class="compact">
+              @for (promotion of promotions(); track promotion.id) {
+                <li>
+                  @if (editingPromotionId() === promotion.id) {
+                    <form class="grid-form" (ngSubmit)="saveEditPromotion()">
+                      <ds-field label="Título" [required]="true">
+                        <input dsControl name="editPromoTitle" [(ngModel)]="editPromotionForm.title" maxlength="120" required />
+                      </ds-field>
+                      <ds-field label="Descuento (%)" [required]="true">
+                        <input dsControl type="number" name="editPromoDiscount" [(ngModel)]="editPromotionForm.discountPercent" min="1" max="90" required />
+                      </ds-field>
+                      <ds-field label="Inicia" [required]="true">
+                        <input dsControl type="date" name="editPromoStart" [(ngModel)]="editPromotionForm.start" required />
+                      </ds-field>
+                      <ds-field label="Termina" [required]="true">
+                        <input dsControl type="date" name="editPromoEnd" [(ngModel)]="editPromotionForm.end" [min]="editPromotionForm.start" required />
+                      </ds-field>
+                      <ds-field class="wide" label="Descripción">
+                        <textarea dsControl name="editPromoDesc" [(ngModel)]="editPromotionForm.description" maxlength="500" rows="2"></textarea>
+                      </ds-field>
+                      <div class="row-start wide">
+                        <ds-button type="submit" variant="primary" size="sm" [loading]="savingPromotion()">Guardar cambios</ds-button>
+                        <ds-button variant="ghost" size="sm" (pressed)="editingPromotionId.set(null)">Cancelar</ds-button>
+                      </div>
+                    </form>
+                  } @else {
+                    <div class="row">
+                      <div>
+                        <strong>{{ promotion.title }}</strong> · {{ promotion.discountPercent }}% · {{ promotion.start }} al {{ promotion.end }}
+                        @if (promotion.description) {
+                          <p class="muted" style="margin: var(--space-1) 0 0;">{{ promotion.description }}</p>
+                        }
+                      </div>
+                      <div class="row-start">
+                        <ds-button variant="secondary" size="sm" (pressed)="startEditPromotion(promotion)">
+                          Editar
+                        </ds-button>
+                        <ds-button variant="danger" size="sm" (pressed)="pendingDeletePromotion.set(promotion)">
+                          Retirar
+                        </ds-button>
+                      </div>
+                    </div>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <ds-empty-state
+              icon="inbox"
+              title="Sin promociones activas"
+              description="Publica una promoción para destacar tu perfil en las búsquedas de pacientes."
+            />
+          }
+        </div>
+      } @else {
+        <ds-alert-banner
+          tone="info"
+          message="Activa tu suscripción mensual para publicar promociones en el directorio."
+        />
+      }
+    </ds-card>
+
+    <ds-card padding="lg">
+      <ds-page-header
+        eyebrow="Expedientes autorizados"
+        title="Pacientes que te dieron acceso"
+        subtitle="Consulta el historial clínico y documentos privados de los pacientes con consentimiento vigente."
+        [headingLevel]="2"
+      >
+        <div dsPageActions>
+          <ds-button variant="secondary" size="sm" (pressed)="loadPatients()">Actualizar</ds-button>
+        </div>
+      </ds-page-header>
+
+      <div class="stack">
+        @if (patientsMessage()) {
+          <ds-alert-banner tone="info" [message]="patientsMessage()" />
+        }
+
+        @if (patients().length) {
+          <ul class="compact">
+            @for (p of patients(); track p.patientId) {
+              <li class="row">
+                <div>
+                  <strong>{{ p.name || p.email }}</strong>
+                  <span class="muted"> · acceso desde {{ formatDateTime(p.accessSince) }}</span>
+                </div>
+                <ds-button
+                  [variant]="selectedPatientId() === p.patientId ? 'primary' : 'secondary'"
+                  size="sm"
+                  [loading]="loadingRecord() && selectedPatientId() === p.patientId"
+                  (pressed)="openRecord(p)"
+                >
+                  {{ selectedPatientId() === p.patientId ? 'Expediente abierto' : 'Ver expediente' }}
+                </ds-button>
+              </li>
+            }
+          </ul>
+        } @else if (subscription()?.active) {
+          <ds-empty-state
+            icon="file"
+            title="Sin pacientes autorizados todavía"
+            description="Cuando un paciente otorgue permiso desde Mi expediente, aparecerá en esta lista."
+          />
+        }
+
+        @if (loadingRecord()) {
+          <ds-skeleton variant="card" [count]="2" label="Cargando expediente del paciente" />
+        } @else if (patientRecord()) {
+          <ds-card tone="muted" padding="md">
+            <h3>Expediente de {{ patientRecord()?.patient?.name || patientRecord()?.patient?.email }}</h3>
+            <midoc-expediente-vista
+              [record]="patientRecord()"
+              [documents]="patientDocuments()"
+              [showClinicalData]="true"
+              [showDocuments]="true"
+            />
+          </ds-card>
+        }
+      </div>
+    </ds-card>
   </div>
-  @if (scheduleMessage()) { <p role="status" class="notice">{{ scheduleMessage() }}</p> }
-</section>
-
-<section class="panel">
-  <div class="row">
-    <h2>Pacientes que me dieron acceso</h2>
-    <button type="button" class="secondary" (click)="loadPatients()">Actualizar</button>
-  </div>
-  @if (patientsMessage()) { <p role="status" class="notice">{{ patientsMessage() }}</p> }
-  <ul class="compact">
-    @for (p of patients(); track p.patientId) {
-      <li>{{ p.name || p.email }} <span class="muted">· acceso desde {{ formatDateTime(p.accessSince) }}</span>
-        <button type="button" class="link" (click)="openRecord(p)">Ver expediente</button></li>
-    } @empty { <li>Ningún paciente te ha dado acceso todavía.</li> }
-  </ul>
-  @if (patientRecord()) {
-    <h3>Expediente de {{ patientRecord()?.patient?.name }}</h3>
-    <midoc-expediente-vista [record]="patientRecord()" [documents]="patientDocuments()" />
-  }
-</section>
 }
+
+<ds-modal
+  [open]="!!pendingDeleteInventory()"
+  title="Eliminar insumo"
+  tone="danger"
+  confirmLabel="Sí, eliminar"
+  cancelLabel="Cancelar"
+  [busy]="deletingInventory()"
+  (closed)="pendingDeleteInventory.set(null)"
+  (confirmed)="confirmDeleteInventory()"
+>
+  @if (pendingDeleteInventory(); as item) {
+    <p>¿Confirmas eliminar <strong>{{ item.name }}</strong> del inventario del consultorio?</p>
+  }
+</ds-modal>
+
+<ds-modal
+  [open]="!!pendingDeletePromotion()"
+  title="Retirar promoción"
+  tone="danger"
+  confirmLabel="Sí, retirar"
+  cancelLabel="Cancelar"
+  [busy]="deletingPromotion()"
+  (closed)="pendingDeletePromotion.set(null)"
+  (confirmed)="confirmDeletePromotion()"
+>
+  @if (pendingDeletePromotion(); as promo) {
+    <p>¿Deseas retirar la promoción <strong>{{ promo.title }}</strong> del directorio médico?</p>
+  }
+</ds-modal>

@@ -1,0 +1,28 @@
+{
+  "title": "MiDoc — búsqueda y agenda del paciente",
+  "brief": "Pantalla de búsqueda y reserva de cita para el paciente de MiDoc, con el sistema de diseño de design/system.md",
+  "feature": "odd/tasks/producto-completo.md",
+  "artboards": [
+    {
+      "file": "01-indice.html",
+      "title": "Índice editorial",
+      "tradeoff": "El escaneo más rápido para quien ya sabe qué busca: resultados como índice tipográfico denso y ficha fija a la derecha. Pierde calidez emocional y la densidad de clics es alta en pantallas táctiles.",
+      "width": 1440,
+      "height": 1200
+    },
+    {
+      "file": "02-triage.html",
+      "title": "Triaje por pasos",
+      "tradeoff": "La mejor opción para quien no sabe qué especialidad necesita: una decisión por paso y los profesionales aparecen sólo después de acotar. Más clics para quien ya conoce al profesional y menos visión simultánea del directorio.",
+      "width": 1440,
+      "height": 1200
+    },
+    {
+      "file": "03-mesa.html",
+      "title": "Mesa clínica",
+      "tradeoff": "La mejor vista de conjunto en escritorio denso: filtros, rejilla y agenda visibles a la vez, sin navegación intermedia. Riesgo de sentirse herramienta de administración y es la dirección más difícil de sostener a 390 px.",
+      "width": 1440,
+      "height": 1200
+    }
+  ]
+}

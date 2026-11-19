@@ -1,84 +1,297 @@
-<section class="panel" aria-labelledby="search-title" [attr.aria-busy]="searching()">
-  <h2 id="search-title">Buscar profesionales</h2>
-  <form class="grid-form" (ngSubmit)="search()">
-    <label>Especialidad
-      <input name="specialty" [(ngModel)]="specialty" placeholder="Ejemplo: medicina familiar">
-    </label>
-    <label>Ciudad o ubicación
-      <input name="location" [(ngModel)]="location" placeholder="Ejemplo: Guadalajara">
-    </label>
-    <label>Nombre o palabra clave
-      <input name="text" [(ngModel)]="text" placeholder="Ejemplo: Ana">
-    </label>
-    <button type="submit" [disabled]="searching()">{{ searching() ? 'Buscando…' : 'Buscar' }}</button>
-  </form>
-  <p role="status" aria-live="polite">{{ message() }}</p>
-</section>
+<div class="stack">
+  <ds-card padding="lg">
+    <ds-page-header
+      eyebrow="Paso 1 · Directorio médico"
+      title="Buscar profesionales"
+      subtitle="Filtra por especialidad, ciudad o nombre y compara tarifas y disponibilidad."
+      [headingLevel]="2"
+    />
 
-<section aria-labelledby="results-title">
-  <h2 id="results-title">Resultados</h2>
-  @if (doctors().length) {
-  <div class="cards">
-    @for (doctor of doctors(); track doctor.id) {
-      <article class="card" [class.selected]="selected()?.id === doctor.id">
-        <h3>{{ doctor.name }}</h3>
-        <p>{{ doctor.specialty }} · {{ doctor.location }}</p>
-        <p>Consulta: ${{ doctor.price }} MXN</p>
-        @for (promotion of doctor.promotions ?? []; track promotion.id) {
-          <p class="promotion-badge"><strong>{{ promotion.discountPercent }}% de descuento</strong> · {{ promotion.title }}</p>
+    <form class="grid-form" (ngSubmit)="search()" aria-labelledby="search-form-label">
+      <span id="search-form-label" class="sr-only">Filtros de búsqueda de profesionales</span>
+      <ds-field label="Especialidad">
+        <input dsControl name="specialty" [(ngModel)]="specialty" placeholder="Ejemplo: medicina familiar" />
+      </ds-field>
+      <ds-field label="Ciudad o ubicación">
+        <input dsControl name="location" [(ngModel)]="location" placeholder="Ejemplo: Guadalajara" />
+      </ds-field>
+      <ds-field label="Nombre o palabra clave">
+        <input dsControl name="text" [(ngModel)]="text" placeholder="Ejemplo: Ana" />
+      </ds-field>
+      <ds-field label="Ordenar por">
+        <select dsControl name="sort" [(ngModel)]="sort" (change)="search()">
+          <option value="NAME">Nombre (A–Z)</option>
+          <option value="PRICE_ASC">Menor precio</option>
+          <option value="PRICE_DESC">Mayor precio</option>
+          <option value="AVAILABILITY">Próxima disponibilidad</option>
+        </select>
+      </ds-field>
+      <div class="row-start">
+        <ds-button type="submit" variant="primary" [loading]="searching()">
+          {{ searching() ? 'Buscando…' : 'Buscar' }}
+        </ds-button>
+        @if (hasActiveFilters()) {
+          <ds-button type="button" variant="ghost" (pressed)="clearFilters()">Limpiar filtros</ds-button>
         }
-        <button type="button" [disabled]="openingDoctor()" (click)="open(doctor)">{{ openingDoctor() ? 'Abriendo perfil…' : 'Ver perfil y agendar' }}</button>
-      </article>
-    }
-  </div>
-  } @else if (searching()) {
-    <p class="panel muted">Buscando profesionales disponibles…</p>
-  } @else if (searched()) {
-    <p class="panel muted">No encontramos profesionales con esos filtros. Prueba otro nombre, especialidad o ciudad.</p>
-  } @else {
-    <p class="panel muted">Completa uno o más filtros y pulsa Buscar. También puedes consultar todos los profesionales sin filtros.</p>
-  }
-</section>
+      </div>
+    </form>
 
-@if (selected(); as doctor) {
-  <section class="panel" aria-labelledby="doctor-title">
-    <h2 id="doctor-title">{{ doctor.name }}</h2>
-    <p class="muted">{{ doctor.type === 'CLINICA' ? 'Consultorio / clínica / hospital' : 'Doctor(a)' }} · {{ doctor.specialty }} · {{ doctor.location }}{{ doctor.city && doctor.city !== doctor.location ? ', ' + doctor.city : '' }}</p>
-    @if (doctor.description) { <p>{{ doctor.description }}</p> }
-    <p>Consulta de {{ doctor.durationMin }} minutos: <strong>${{ doctor.price }} MXN</strong></p>
-    @for (promotion of doctor.promotions ?? []; track promotion.id) {
-      <p class="promotion-badge"><strong>Promoción: {{ promotion.title }} ({{ promotion.discountPercent }}% de descuento)</strong>
-        @if (promotion.description) { · {{ promotion.description }} }
-        <span> Vigente del {{ promotion.start }} al {{ promotion.end }}. Consulta condiciones con el profesional.</span></p>
+    @if (message()) {
+      <p role="status" aria-live="polite" class="muted" style="margin-top: var(--space-3); margin-bottom: 0;">
+        {{ message() }}
+      </p>
     }
+  </ds-card>
 
-    <h3>Horario semanal</h3>
-    <ul class="compact">
-      @for (block of doctor.schedule ?? []; track $index) {
-        <li>{{ days[block.dia_semana] }}: {{ block.hora_inicio }} a {{ block.hora_fin }}</li>
-      } @empty {
-        <li>El profesional aún no publica su horario.</li>
-      }
-    </ul>
+  <section aria-labelledby="results-title" [attr.aria-busy]="searching()">
+    <h2 id="results-title">Profesionales disponibles</h2>
 
-    <h3>Agendar cita</h3>
-    <div class="grid-form">
-      <label>Fecha
-        <input type="date" name="date" [min]="minDate" [(ngModel)]="date" (change)="loadSlots()">
-      </label>
-      <label>Motivo de la consulta (opcional)
-        <input name="reason" [(ngModel)]="reason" maxlength="500" placeholder="Ejemplo: chequeo general">
-      </label>
-    </div>
-    @if (slotsMessage()) { <p class="muted">{{ slotsMessage() }}</p> }
-    <div class="slots">
-      @for (slot of slots(); track slot) {
-        <button type="button" class="secondary" [disabled]="booking()" (click)="book(slot)">{{ booking() ? 'Reservando…' : formatTime(slot) }}</button>
-      }
-    </div>
-    @if (api.isPatient()) {
-      <p><button type="button" class="link" [disabled]="updatingConsent()" (click)="grantAccess()">{{ updatingConsent() ? 'Actualizando permiso…' : 'Autorizar a ' + doctor.name + ' para consultar mi expediente' }}</button></p>
+    @if (searchError()) {
+      <ds-alert-banner
+        tone="danger"
+        title="No pudimos consultar el directorio"
+        [message]="searchError()"
+        actionLabel="Reintentar"
+        (action)="search()"
+      />
+    } @else if (searching()) {
+      <ds-skeleton variant="card" [count]="3" label="Buscando profesionales disponibles" />
+    } @else if (doctors().length) {
+      <div class="cards">
+        @for (doctor of doctors(); track doctor.id) {
+          <ds-card
+            [selected]="selected()?.id === doctor.id"
+            [interactive]="true"
+          >
+            <div class="row" dsCardHeader>
+              <div>
+                <h3 style="margin: 0;">{{ doctor.name }}</h3>
+                <p class="muted" style="margin: 0;">{{ doctor.specialty }}</p>
+              </div>
+              <ds-badge [tone]="doctor.type === 'CLINICA' ? 'info' : 'neutral'">
+                {{ doctor.type === 'CLINICA' ? 'Clínica' : 'Doctor(a)' }}
+              </ds-badge>
+            </div>
+
+            <div class="stack-sm">
+              <p class="muted" style="margin: 0;">
+                {{ doctor.location }}{{ doctor.city && doctor.city !== doctor.location ? ', ' + doctor.city : '' }}
+              </p>
+
+              @if (discountPercent(doctor) > 0) {
+                <p style="margin: 0;">
+                  <del class="price-strike">${{ doctor.price }} MXN</del>
+                  <strong class="price-final">${{ effectivePrice(doctor) }} MXN</strong>
+                  <ds-badge tone="warning">-{{ discountPercent(doctor) }}%</ds-badge>
+                </p>
+              } @else {
+                <p style="margin: 0;">
+                  Consulta: <strong class="tabular-nums">${{ doctor.price }} MXN</strong>
+                </p>
+              }
+
+              @for (promotion of doctor.promotions ?? []; track promotion.id) {
+                <p class="promotion-badge" style="margin: 0;">
+                  <strong>{{ promotion.title }}</strong> · {{ promotion.discountPercent }}% de descuento
+                </p>
+              }
+
+              @if (doctor.nextAvailableSlot) {
+                <p class="muted" style="margin: 0; font-size: var(--text-xs);">
+                  Próximo horario: {{ formatDateTime(doctor.nextAvailableSlot) }}
+                </p>
+              }
+            </div>
+
+            <div dsCardFooter>
+              <ds-button
+                variant="secondary"
+                [fullWidth]="true"
+                [loading]="openingDoctorId() === doctor.id"
+                (pressed)="open(doctor)"
+              >
+                {{ openingDoctorId() === doctor.id ? 'Abriendo perfil…' : 'Ver perfil y agendar' }}
+              </ds-button>
+            </div>
+          </ds-card>
+        }
+      </div>
+    } @else if (searched()) {
+      <ds-empty-state
+        icon="search"
+        title="Sin resultados para estos filtros"
+        description="No encontramos profesionales que coincidan con tu búsqueda actual. Prueba ampliando los filtros."
+        [actionLabel]="hasActiveFilters() ? 'Limpiar filtros' : 'Actualizar directorio'"
+        (action)="hasActiveFilters() ? clearFilters() : search()"
+      />
     }
-    @if (bookingMessage()) { <p role="status" class="notice">{{ bookingMessage() }}</p> }
   </section>
-}
+
+  @if (selected(); as doctor) {
+    <ds-card padding="lg" id="doctor-profile-panel">
+      <ds-page-header
+        eyebrow="Paso 2 · Perfil y disponibilidad"
+        [title]="doctor.name"
+        [subtitle]="doctor.specialty + ' · ' + doctor.location + (doctor.city && doctor.city !== doctor.location ? ', ' + doctor.city : '')"
+        [headingLevel]="2"
+      >
+        <div dsPageActions>
+          <ds-button variant="ghost" size="sm" (pressed)="closeProfile()">Cerrar perfil</ds-button>
+        </div>
+      </ds-page-header>
+
+      <div class="stack">
+        @if (doctor.description) {
+          <p>{{ doctor.description }}</p>
+        }
+
+        <p>
+          Consulta de {{ doctor.durationMin ?? 30 }} minutos:
+          @if (discountPercent(doctor) > 0) {
+            <del class="price-strike">${{ doctor.price }} MXN</del>
+            <strong class="price-final">${{ effectivePrice(doctor) }} MXN</strong>
+          } @else {
+            <strong class="tabular-nums">${{ doctor.price }} MXN</strong>
+          }
+        </p>
+
+        @for (promotion of doctor.promotions ?? []; track promotion.id) {
+          <p class="promotion-badge">
+            <strong>Promoción: {{ promotion.title }} ({{ promotion.discountPercent }}% de descuento)</strong>
+            @if (promotion.description) { · {{ promotion.description }} }
+            <span> Vigente del {{ promotion.start }} al {{ promotion.end }}.</span>
+          </p>
+        }
+
+        <div>
+          <h3>Horario semanal</h3>
+          <ul class="compact">
+            @for (block of doctor.schedule ?? []; track $index) {
+              <li>{{ days[block.dia_semana] }}: {{ block.hora_inicio }} a {{ block.hora_fin }}</li>
+            } @empty {
+              <li class="muted">El profesional aún no publica su horario semanal.</li>
+            }
+          </ul>
+        </div>
+
+        <div>
+          <h3>Elige fecha y horario</h3>
+          <div class="grid-form">
+            <ds-field label="Fecha de consulta">
+              <input
+                dsControl
+                type="date"
+                name="date"
+                [min]="minDate"
+                [max]="maxDate"
+                [(ngModel)]="date"
+                (change)="loadSlots()"
+              />
+            </ds-field>
+            <div>
+              <ds-button variant="secondary" [loading]="loadingSlots()" (pressed)="loadSlots()">
+                Actualizar horarios
+              </ds-button>
+            </div>
+          </div>
+
+          @if (loadingSlots()) {
+            <div style="margin-top: var(--space-3);">
+              <ds-skeleton variant="row" [count]="1" label="Consultando disponibilidad" />
+            </div>
+          } @else if (slots().length) {
+            <div class="slots" role="group" aria-label="Horarios disponibles">
+              @for (slot of slots(); track slot) {
+                <ds-button
+                  [variant]="selectedSlot() === slot ? 'primary' : 'secondary'"
+                  size="sm"
+                  (pressed)="selectSlot(slot)"
+                >
+                  {{ formatTime(slot) }}
+                </ds-button>
+              }
+            </div>
+          } @else if (slotsMessage()) {
+            <div style="margin-top: var(--space-3);">
+              <ds-alert-banner tone="info" [message]="slotsMessage()" />
+            </div>
+          }
+        </div>
+
+        @if (selectedSlot(); as slot) {
+          <ds-card tone="muted" padding="md">
+            <div class="stack">
+              <h3 style="margin: 0;">Paso 3 · Confirmar tu cita</h3>
+              <dl class="data">
+                <dt>Profesional</dt>
+                <dd>{{ doctor.name }} · {{ doctor.specialty }}</dd>
+                <dt>Fecha y hora</dt>
+                <dd>{{ formatDateTime(slot) }}</dd>
+                <dt>Tarifa estimada</dt>
+                <dd class="tabular-nums">${{ effectivePrice(doctor) }} MXN</dd>
+              </dl>
+
+              @if (!api.user()) {
+                <ds-alert-banner
+                  tone="info"
+                  title="Inicia sesión para confirmar"
+                  message="Necesitas una cuenta de paciente para completar tu reserva."
+                  actionLabel="Iniciar sesión"
+                  (action)="goToLogin()"
+                />
+              } @else if (api.isDoctor()) {
+                <ds-alert-banner
+                  tone="warning"
+                  message="Iniciaste sesión como profesional. Para agendar una cita médica, accede con una cuenta de paciente."
+                />
+              } @else {
+                <ds-field label="Motivo de la consulta (opcional)" hint="Máximo 500 caracteres.">
+                  <input
+                    dsControl
+                    name="reason"
+                    [(ngModel)]="reason"
+                    maxlength="500"
+                    placeholder="Ejemplo: chequeo general"
+                  />
+                </ds-field>
+                <div class="row-start">
+                  <ds-button variant="primary" [loading]="booking()" (pressed)="confirmBooking()">
+                    {{ booking() ? 'Confirmando cita…' : 'Confirmar cita' }}
+                  </ds-button>
+                  <ds-button variant="ghost" [disabled]="booking()" (pressed)="selectedSlot.set(null)">
+                    Cambiar horario
+                  </ds-button>
+                </div>
+              }
+            </div>
+          </ds-card>
+        }
+
+        @if (bookingMessage()) {
+          <ds-alert-banner
+            [tone]="bookingSuccess() ? 'success' : 'danger'"
+            [message]="bookingMessage()"
+            [actionLabel]="bookingSuccess() ? 'Ver mis citas' : ''"
+            (action)="goToAppointments()"
+          />
+        }
+
+        @if (api.isPatient()) {
+          <div class="row-start">
+            <ds-button
+              variant="ghost"
+              size="sm"
+              [loading]="updatingConsent()"
+              (pressed)="grantAccess()"
+            >
+              Autorizar a {{ doctor.name }} para consultar mi expediente
+            </ds-button>
+          </div>
+          @if (consentMessage()) {
+            <ds-alert-banner tone="success" [message]="consentMessage()" />
+          }
+        }
+      </div>
+    </ds-card>
+  }
+</div>

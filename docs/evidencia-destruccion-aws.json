@@ -1,32 +1,33 @@
 {
-  "verifiedAt": "2026-10-16T14:46:41.523842+00:00",
-  "account": "647018795197",
+  "verifiedAt": "2026-11-19T20:43:18.595585+00:00",
+  "account": "211125582285",
   "region": "us-east-1",
   "project": "midoc",
-  "result": "PENDING",
+  "result": "PASS",
   "remaining": {
     "lambda": [],
     "apiGateway": [],
     "rds": [],
     "snapshots": [],
+    "dbSubnetGroups": [],
     "dynamodb": [],
     "s3": [],
     "secrets": [],
-    "logs": [],
     "eventbridge": [],
-    "securityGroups": [
-      "sg-0cc5831717592d5d5"
-    ],
+    "logs": [],
+    "alarms": [],
+    "dashboards": [],
+    "queryDefinitions": [],
+    "sns": [],
+    "securityGroups": [],
+    "subnets": [],
+    "routeTables": [],
+    "natGateways": [],
+    "eips": [],
     "vpcEndpoints": [],
-    "networkInterfaces": [
-      "eni-0f32fe5530ecb6079",
-      "eni-04a4b2526c34ab64b"
-    ]
+    "networkInterfaces": []
   },
-  "terraformManagedResources": [
-    "Estado no disponible; repetir al finalizar terraform apply"
-  ],
+  "terraformManagedResources": [],
   "preservedRole": "LabRole",
-  "scope": "Recursos MiDoc en us-east-1; se conservan LabRole, VPC/subnets predeterminadas y recursos ajenos.",
-  "note": "Los IDs de endpoints y security groups corresponden al despliegue validado del 16/10/2026."
+  "scope": "Recursos 'midoc' en us-east-1; se conservan LabRole, VPC/subnets/RT predeterminadas y recursos ajenos."
 }

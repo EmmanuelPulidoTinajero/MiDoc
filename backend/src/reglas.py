@@ -21,8 +21,6 @@ TIPOS_SANGRE = ("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
 MONTO_SUSCRIPCION = Decimal("20.00")
 DIAS_SUSCRIPCION = 30
 DIAS_MAXIMOS_ANTICIPACION = 90
-# Tarjeta de prueba que siempre se rechaza (misma convención que Stripe).
-TARJETA_RECHAZADA = "4000000000000002"
 
 
 class ErrorApi(Exception):
@@ -231,20 +229,22 @@ def bloques_se_traslapan(bloques):
 
 
 # ---------------------------------------------------------------------------
-# Flujo 3: suscripción y pago simulado
+# Flujo 3: suscripción y pagos reales con Stripe
 # ---------------------------------------------------------------------------
 
 def resumen_suscripcion(periodos, referencia):
     """Une los periodos pagados del doctor en uno solo.
 
     Si hay un periodo vigente hoy, el resumen va de su inicio al fin del último
-    periodo pagado por adelantado (se encadenan). Si no, es el periodo más reciente.
+    periodo pagado por adelantado (se encadenan). Si no, es el periodo pagado
+    más reciente (sin dejar que un checkout PENDIENTE oculte una suscripción previa).
     """
     if not periodos:
         return None
     activos = [p for p in periodos if p.get("status") == "ACTIVA"]
     vigentes = [p for p in activos if suscripcion_vigente(p, referencia)]
-    reciente = max(periodos, key=lambda p: p.get("end") or date.min)
+    candidatos = activos or [p for p in periodos if p.get("status") != "PENDIENTE"] or periodos
+    reciente = max(candidatos, key=lambda p: p.get("end") or date.min)
     if not vigentes:
         return dict(reciente)
     fines = [p["end"] for p in activos if p.get("end") and p["end"] >= referencia]
@@ -270,38 +270,3 @@ def periodo_nueva_suscripcion(actual, referencia):
     else:
         inicio = referencia
     return inicio, inicio + timedelta(days=DIAS_SUSCRIPCION - 1)
-
-
-def _luhn_valido(numero):
-    suma = 0
-    for i, digito in enumerate(reversed(numero)):
-        valor = int(digito) * (2 if i % 2 else 1)
-        suma += valor - 9 if valor > 9 else valor
-    return suma % 10 == 0
-
-
-def _marca(numero):
-    if numero.startswith("4"):
-        return "VISA"
-    if re.match(r"^(5[1-5]|2[2-7])", numero):
-        return "MASTERCARD"
-    if re.match(r"^3[47]", numero):
-        return "AMEX"
-    return "OTRA"
-
-
-def procesar_pago_simulado(numero, mes, anio, cvv, referencia):
-    """Valida la tarjeta como lo haría una pasarela; no cobra nada.
-    Regresa (marca, últimos 4). Nunca se guarda el número completo."""
-    numero = re.sub(r"[\s-]", "", numero or "")
-    if not numero.isdigit() or not 13 <= len(numero) <= 19 or not _luhn_valido(numero):
-        raise ErrorApi(400, "El número de tarjeta no es válido")
-    if (anio, mes) < (referencia.year, referencia.month):
-        raise ErrorApi(400, "La tarjeta está vencida")
-    marca = _marca(numero)
-    largo_cvv = 4 if marca == "AMEX" else 3
-    if not (cvv or "").isdigit() or len(cvv) != largo_cvv:
-        raise ErrorApi(400, f"El CVV debe tener {largo_cvv} dígitos")
-    if numero == TARJETA_RECHAZADA:
-        raise ErrorApi(402, "El banco rechazó el pago")
-    return marca, numero[-4:]

@@ -1,6 +1,6 @@
 # Revisión integral de MiDoc
 
-> Estado posterior a las pruebas: el usuario solicitó retirar el entorno AWS el 16/10/2026. Código y evidencia publicados en el commit cc315ec; el estado operativo descrito abajo es histórico. Ver [CIERRE-AWS.md](CIERRE-AWS.md).
+> **Nota de vigencia:** Las secciones 1–6 abajo conservan la línea base **histórica del 16 de octubre de 2026** (commit `cc315ec`, Fase 2, entorno retirado). Los pendientes identificados en dicha revisión fueron resueltos en **Fase 3 (Hitos M1–M4)**; consulta el resumen de cierre al final de este documento y la matriz actualizada en [EVALUACION-INTEGRAL.md](EVALUACION-INTEGRAL.md). Ver también [CIERRE-AWS.md](CIERRE-AWS.md).
 
 Fecha: 16 de octubre de 2026. Alcance: los tres PDF originales, código, frontend, persistencia, Terraform y pruebas reales en AWS Academy Learner Lab. El video permanece pendiente por instrucción del usuario.
 
@@ -76,7 +76,7 @@ No se declara cumplimiento total ni aprobación para uso clínico real. La suscr
 4. Correo/push no implementado. Requiere identidad remitente o suscripciones confirmadas y verificación de permisos de envío. No publicar en RedshiftSNS ni enviar a direcciones de terceros.
 5. WCAG: axe y teclado básico no certifican conformidad. Falta lector de pantalla, revisión manual del foco/errores y zoom completo.
 6. Seguridad/operación: limitar login, rotación probada de JWT, certificados PostgreSQL verify-full, política de cuentas demo, paginación S3, validación real de contenido/antimalware, backup/restore y disponibilidad bajo carga.
-7. RDS no es Multi-AZ; skip_final_snapshot=true y estado Terraform local requieren protección. La sesión Learner Lab y el presupuesto limitan disponibilidad. El entorno se retiró por instrucción posterior del usuario; ver CIERRE-AWS.md.
+7. RDS no es Multi-AZ; skip_final_snapshot=true y estado Terraform local requieren protección. La sesión Learner Lab y el presupuesto limitan disponibilidad. El entorno se retiró por instrucción posterior del usuario; ver [CIERRE-AWS.md](CIERRE-AWS.md).
 8. CD y monitoreo completo corresponden a hitos posteriores. CI está configurado y el push cc315ec fue publicado; su resultado remoto debe consultarse en GitHub Actions.
 
 Revocar consentimiento bloquea nuevas URLs/lecturas; una URL S3 ya firmada puede durar hasta 300 segundos. Es un límite que debe conservarse en la aceptación. La receta imprimible es de demostración, sin validación legal clínica.
@@ -103,3 +103,21 @@ python reporte/generar_entrega.py
 Las pruebas smoke son explícitas, crean cuentas sintéticas y hacen escrituras reales. Playwright se instaló sólo en una carpeta temporal y usa Edge instalado; no es dependencia Lambda. Se eliminan archivos, insumos y promociones de prueba, se cancela la cita auxiliar, se revoca el acceso al final y se vacía el horario del profesional sintético. Las cuentas, historial y mensajes sintéticos permanecen identificados como E2E DEMO. La prueba del navegador crea pacientes ficticios adicionales; no usa datos médicos reales ni imprime tokens.
 
 La rúbrica asigna 70 puntos al video, 20 al repositorio y 10 al PDF: dejar el video pendiente impide declarar entrega académica completa, aunque los recorridos técnicos estén verificados.
+
+---
+
+## 7. Actualización de cierre · Fase 3 (Hitos M1–M4)
+
+Todos los elementos pendientes heredados de la revisión del 16/10/2026 quedaron cerrados en código, infraestructura y documentación durante los hitos M1–M4:
+
+| Pendiente histórico (§4) | Cierre implementado en Fase 3 | Documento de respaldo |
+| --- | --- | --- |
+| Suscripción simulada con tarjetas de prueba | Integración real con **Stripe Checkout Sessions + Webhook HMAC**, configurable `test` vs `live` pre-despliegue; antiguo endpoint retirado (`410 Gone`) | [PAGOS-STRIPE.md](PAGOS-STRIPE.md) |
+| Receta sólo imprimible en navegador | Generación real de PDF en backend (`pdf_receta.py`), carga a S3 (`recetas/{receta_id}.pdf`) y `downloadUrl` firmado de 300 s | [API.md](API.md) |
+| Monitoreo completo y CD pendientes | 2 Log Groups (14 d), access logs API GW, 12 métricas EMF, 10 alarmas, SNS `midoc-alerts`, dashboard `midoc-estado`, 4 Logs Insights queries, `ci.yml` y `cd.yml` | [OBSERVABILIDAD-Y-CICD.md](OBSERVABILIDAD-Y-CICD.md) |
+| Migraciones 001/002 incompletas | Migraciones `001`–`004` alineadas 1:1 con `schema.sql` y verificadas por `backend/test/test_migraciones.py` | [EVALUACION-INTEGRAL.md](EVALUACION-INTEGRAL.md) |
+| Idempotencia, rate limit y DynamoDB | Encabezado `Idempotency-Key`, límite `429` en login, `ALLOW_DEMO_SEED=false` en prod, `PUT /api/me`, `POST /api/auth/refresh`, `GET /api/records/access-log`, tolerancia a fallos DynamoDB | [EVALUACION-INTEGRAL.md](EVALUACION-INTEGRAL.md) |
+| UX/WCAG y diseño de interfaz | Design System construido desde cero (`../design/system.md`, `_tokens.css`, 9 primitivas `ds/`), `HashLocationStrategy`, cero `confirm()` nativos y 8 pruebas Playwright desktop/móvil | [EVALUACION-INTEGRAL.md](EVALUACION-INTEGRAL.md) |
+| Enlace roto `CIERRE-AWS.md` y teardown parcial | `docs/CIERRE-AWS.md` creado, bucket privado integrado en `terraform destroy` (`delete_medical_bucket_on_destroy = true`), `recovery_window_in_days = 0`, `verify_teardown.py` dinámico (21 claves). Ejecución en vivo pendiente de M5 | [CIERRE-AWS.md](CIERRE-AWS.md) |
+
+**Conteos locales vigentes (post-M3):** `101` pruebas backend (`unittest`), `20` archivos / `57` pruebas Vitest, `8` pruebas Playwright (`frontend/e2e`) y `197` casos E2E de 4 niveles en `tests/e2e/`.

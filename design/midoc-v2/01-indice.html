@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiDoc — Índice editorial · Búsqueda y agenda del paciente</title>
+<!--
+  Dirección 1 de 3 · Índice editorial.
+  Lienzo objetivo 1440 × 1200 px. Contenedor: --container-max (72rem).
+  Identidad: design/system.md (papel cálido, tinta verde, serif de display, filete clínico).
+  Estrategia: el resultado es un índice tipográfico denso (tabla de filetes) y la ficha
+  del profesional vive en una columna derecha que se actualiza al elegir renglón.
+-->
+<style>
+  /* Tokens copiados verbatim de design/system.html:9-56. */
+  :root {
+    --color-canvas: #f4f2ec;
+    --color-surface: #ffffff;
+    --color-surface-muted: #eae7e0;
+    --color-border: #dcd8cf;
+    --color-border-strong: #7d8f86;
+    --color-text: #17352b;
+    --color-text-soft: #5b7268;
+    --color-text-disabled: #9aaba2;
+    --color-text-inverse: #ffffff;
+    --color-primary: #246b59;
+    --color-primary-hover: #1d5a46;
+    --color-primary-active: #164a3d;
+    --color-primary-soft: #d5efe2;
+    --color-accent: #8a4b00;
+    --color-danger: #a83a32;
+    --color-danger-soft: #f8dcd9;
+    --color-warning: #6b4d00;
+    --color-warning-soft: #fff7e5;
+    --color-info: #24427a;
+    --color-info-soft: #dde6f7;
+    --color-success: #1d5a46;
+    --color-success-soft: #d5efe2;
+    --color-focus: #17352b;
+
+    --font-display: ui-serif, Georgia, "Times New Roman", serif;
+    --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem;
+    --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem;
+    --space-12: 3rem; --space-16: 4rem; --space-20: 5rem;
+
+    --radius-sm: 0.25rem; --radius-md: 0.5rem; --radius-lg: 0.75rem;
+    --radius-xl: 1.25rem; --radius-pill: 999px;
+
+    --control-height: 2.5rem;
+    --measure: 68ch;
+    --container-max: 72rem;
+
+    --shadow-1: 0 1px 2px rgba(23,53,43,.06), 0 1px 1px rgba(23,53,43,.04);
+    --shadow-2: 0 4px 12px rgba(23,53,43,.08), 0 1px 3px rgba(23,53,43,.06);
+    --shadow-3: 0 16px 40px rgba(23,53,43,.14), 0 2px 8px rgba(23,53,43,.08);
+
+    --motion-fast: 120ms;
+    --motion-base: 200ms;
+    --motion-slow: 320ms;
+    --ease-standard: cubic-bezier(.2,.6,.2,1);
+    --ease-entrance: cubic-bezier(.16,1,.3,1);
+
+    /* Tokens de design/system.md que no aparecen en el bloque de system.html
+       (§Tipografía, §Radios y medidas). Valores del sistema, no inventados. */
+    --text-xs: 0.75rem;
+    --text-sm: 0.8125rem;
+    --text-base: 0.9375rem;
+    --text-md: 1.0625rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.5rem;
+    --text-2xl: 1.875rem;
+    --text-3xl: 2.5rem;
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --tracking-display: -0.01em;
+    --tracking-label: 0.06em;
+    --control-height-sm: 2rem;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--text-base);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: var(--tracking-display);
+    font-weight: var(--weight-semibold);
+    margin: 0;
+  }
+  h1 { font-size: var(--text-2xl); line-height: 1.2; }
+  h2 { font-size: var(--text-xl); line-height: 1.3; }
+  h3 { font-size: var(--text-lg); line-height: 1.45; }
+  h4 { font-size: var(--text-md); line-height: 1.45; }
+  p { margin: 0; }
+  a { color: var(--color-primary); } /* 5.65:1 sobre --color-canvas */
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  .skip-link {
+    position: absolute; left: var(--space-4); top: var(--space-4); z-index: 10;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-surface); color: var(--color-text);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+    font-size: var(--text-sm); font-weight: var(--weight-medium);
+    transform: translateY(-200%);
+    transition: transform var(--motion-fast) var(--ease-standard);
+  }
+  .skip-link:focus-visible { transform: translateY(0); }
+
+  .wrap { max-width: var(--container-max); margin: 0 auto; padding: 0 var(--space-6) var(--space-12); }
+
+  /* ── Barra superior ───────────────────────────────────────────────── */
+  .topbar {
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .topbar-in {
+    max-width: var(--container-max); margin: 0 auto;
+    padding: var(--space-3) var(--space-6);
+    display: flex; align-items: center; gap: var(--space-8);
+  }
+  .brand { display: flex; align-items: baseline; gap: var(--space-3); }
+  .wordmark {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    line-height: 1;
+    letter-spacing: var(--tracking-display);
+    font-weight: var(--weight-semibold);
+  }
+  .wordmark::after {
+    content: ""; display: inline-block; vertical-align: baseline;
+    width: 6px; height: 6px; margin-left: var(--space-1);
+    border-radius: 50%; background: var(--color-accent);
+  }
+  .brand-sub {
+    font-size: var(--text-xs); letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--color-text-soft);
+  }
+  .mainnav { display: flex; gap: var(--space-1); margin-left: auto; }
+  .mainnav button {
+    appearance: none; border: 0; background: none;
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-3); border-radius: var(--radius-md);
+    font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);
+    color: var(--color-text-soft); cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard);
+  }
+  .mainnav button:hover { background: var(--color-surface-muted); color: var(--color-text); }
+  .mainnav button[aria-current="page"] {
+    color: var(--color-text);
+    box-shadow: inset 0 -2px 0 var(--color-primary);
+  }
+
+  .session { display: flex; align-items: center; gap: var(--space-3); }
+  .bell {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: var(--control-height); height: var(--control-height);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+    background: var(--color-surface); color: var(--color-text); cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard);
+  }
+  .bell:hover { background: var(--color-surface-muted); }
+  .bell-count {
+    position: absolute; top: 3px; right: 3px;
+    min-width: 14px; height: 14px; padding: 0 3px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--color-accent); color: var(--color-text-inverse);
+    font-size: 10px; font-weight: var(--weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+  .who { display: flex; flex-direction: column; line-height: 1.2; }
+  .who-name { font-size: var(--text-sm); font-weight: var(--weight-medium); }
+  .who-role {
+    font-size: var(--text-xs); letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--color-text-soft);
+  }
+  .avatar {
+    width: var(--control-height); height: var(--control-height);
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--color-primary-soft);
+    color: var(--color-success); font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  }
+
+  /* ── Controles ────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+    min-height: var(--control-height); padding: 0 var(--space-4);
+    border: 1px solid transparent; border-radius: var(--radius-md);
+    font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard),
+                border-color var(--motion-fast) var(--ease-standard),
+                color var(--motion-fast) var(--ease-standard);
+  }
+  .btn-primary { background: var(--color-primary); color: var(--color-text-inverse); } /* 6.32:1 */
+  .btn-primary:hover { background: var(--color-primary-hover); } /* 8.07:1 */
+  .btn-primary:active { background: var(--color-primary-active); } /* 10.09:1 */
+  .btn-secondary { background: var(--color-surface); border-color: var(--color-border-strong); color: var(--color-text); }
+  .btn-secondary:hover { background: var(--color-surface-muted); }
+  .btn-ghost { background: transparent; color: var(--color-text); }
+  .btn-ghost:hover { background: var(--color-surface-muted); }
+  .btn-sm { min-height: var(--control-height-sm); padding: 0 var(--space-3); font-size: var(--text-xs); }
+  .btn[disabled] {
+    background: var(--color-surface-muted); color: var(--color-text-disabled);
+    border-color: var(--color-border); cursor: not-allowed;
+  }
+
+  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .field > label {
+    font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text);
+  }
+  .field input, .field select {
+    width: 100%; min-height: var(--control-height);
+    padding: 0 var(--space-3);
+    font: inherit; font-size: var(--text-sm); color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong); /* 3.42:1 sobre blanco, y 3.05:1 sobre canvas */
+    border-radius: var(--radius-md);
+    transition: border-color var(--motion-fast) var(--ease-standard);
+  }
+  .field input::placeholder { color: var(--color-text-disabled); }
+  .field input[aria-invalid="true"] { border-color: var(--color-danger); }
+  .field .hint { font-size: var(--text-xs); color: var(--color-text-soft); } /* 5.18:1 sobre blanco */
+  .field .error { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--color-danger); } /* 6.33:1 sobre blanco */
+
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0; margin: 0; list-style: none; }
+  .chip {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    min-height: var(--control-height-sm); padding: 0 var(--space-3);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-pill);
+    background: var(--color-surface); color: var(--color-text);
+    font: inherit; font-size: var(--text-xs); font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard);
+  }
+  .chip:hover { background: var(--color-surface-muted); }
+  .chip-static { background: var(--color-primary-soft); border-color: transparent; color: var(--color-success); } /* 6.64:1 */
+  .chip-static:hover { background: var(--color-primary-soft); }
+  .chip-x { font-family: var(--font-ui); font-size: var(--text-sm); line-height: 1; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    padding: 1px var(--space-3); border-radius: var(--radius-pill);
+    font-size: var(--text-xs); font-weight: var(--weight-medium);
+  }
+  .badge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .badge-success { background: var(--color-success-soft); color: var(--color-success); } /* 6.64:1 */
+  .badge-warning { background: var(--color-warning-soft); color: var(--color-warning); } /* 7.33:1 */
+  .badge-danger { background: var(--color-danger-soft); color: var(--color-danger); } /* 4.89:1 */
+
+  .eyebrow {
+    font-size: var(--text-xs); letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--color-text-soft); font-weight: var(--weight-medium);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: var(--font-mono); }
+
+  /* ── Encabezado de la pantalla y región de búsqueda ───────────────── */
+  main { padding-top: var(--space-6); }
+  .pantalla { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+  .pantalla .lede { color: var(--color-text-soft); max-width: 52ch; margin-top: var(--space-2); } /* 4.63:1 */
+  .pantalla .fecha { font-size: var(--text-sm); color: var(--color-text-soft); text-align: right; }
+
+  .buscador { margin-top: var(--space-6); padding: var(--space-5) var(--space-5) var(--space-4); background: var(--color-surface); border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+  .campos { display: grid; grid-template-columns: minmax(14rem, 2fr) 1fr 1fr 1fr auto; gap: var(--space-4); align-items: end; }
+  .campos .btn { align-self: end; }
+
+  .filtros-activos { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+  .filtros-activos .rotulo { font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-soft); margin-right: var(--space-1); }
+  .limpiar { margin-left: auto; }
+
+  .meta-resultado { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin: var(--space-6) 0 var(--space-4); }
+  .meta-resultado .cuenta { font-size: var(--text-sm); color: var(--color-text-soft); }
+  .meta-resultado .cuenta strong { color: var(--color-text); font-weight: var(--weight-semibold); }
+
+  /* ── Dos columnas: índice + ficha ─────────────────────────────────── */
+  .columnas > section, .columnas > aside { min-width: 0; }
+  .columnas { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(20rem, 1fr); gap: var(--space-8); align-items: start; }
+
+  /* Índice: tabla tipográfica densa, sólo filetes. */
+  .indice { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  caption { text-align: left; padding: var(--space-4) var(--space-5); color: var(--color-text-soft); font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; border-bottom: 1px solid var(--color-border); }
+  th, td { padding: var(--space-3) var(--space-4); text-align: left; border-top: 1px solid var(--color-border); vertical-align: top; }
+  thead th { border-top: 0; font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-soft); font-weight: var(--weight-medium); }
+  th.num, td.num { text-align: right; }
+  tbody tr { transition: background var(--motion-fast) var(--ease-standard); }
+  tbody tr:hover { background: var(--color-surface-muted); }
+  tbody tr.fila-sel { background: var(--color-primary-soft); } /* texto --color-text sobre --color-primary-soft: 10.93:1 */
+  tbody tr.fila-sel:hover { background: var(--color-primary-soft); }
+  tbody tr.fila-sel td, tbody tr.fila-sel .doc-nombre, tbody tr.fila-sel .doc-meta { color: var(--color-text); }
+  tbody tr.fila-sel small { color: var(--color-text); }
+  .doc-btn {
+    appearance: none; border: 0; background: none; padding: 0; margin: 0;
+    font: inherit; text-align: left; color: var(--color-text); cursor: pointer;
+    font-family: var(--font-display); font-size: var(--text-md); font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-display);
+  }
+  .doc-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .doc-meta { display: block; font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-soft); letter-spacing: normal; font-weight: var(--weight-regular); }
+  tr.fila-sel .doc-btn { text-decoration: none; }
+  .precio { font-family: var(--font-display); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
+  .precio small { display: block; font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-soft); font-variant-numeric: normal; }
+  .prox { font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .prox small { display: block; font-size: var(--text-xs); color: var(--color-text-soft); }
+
+  /* ── Ficha del profesional ────────────────────────────────────────── */
+  .ficha { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-5); position: sticky; top: var(--space-4); }
+  .ficha-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+  .ficha h2 { margin-top: var(--space-1); }
+  .ficha .linaje { font-size: var(--text-sm); color: var(--color-text-soft); margin-top: var(--space-1); }
+  .ficha .desc { margin-top: var(--space-4); font-size: var(--text-sm); max-width: var(--measure); }
+  .tarifa { display: flex; align-items: baseline; gap: var(--space-3); margin-top: var(--space-4); padding: var(--space-3) 0; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+  .tarifa .cifra { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display); font-variant-numeric: tabular-nums; }
+  .tarifa .nota { font-size: var(--text-xs); color: var(--color-text-soft); }
+  .bloque { margin-top: var(--space-5); }
+  .bloque > h3 { margin-bottom: var(--space-2); }
+  .bloque-nota { font-size: var(--text-xs); color: var(--color-text-soft); margin-bottom: var(--space-3); }
+
+  .horario-table td, .horario-table th { padding: var(--space-2) 0; border-top: 1px solid var(--color-border); font-size: var(--text-sm); }
+  .horario-table thead th { border-top: 0; }
+  .horario-table th[scope="row"] { font-weight: var(--weight-medium); padding-right: var(--space-3); white-space: nowrap; }
+  .horario-table td { font-variant-numeric: tabular-nums; color: var(--color-text-soft); }
+
+  .agenda-dia { border-top: 1px solid var(--color-border); padding: var(--space-3) 0; }
+  .agenda-dia:first-of-type { border-top: 0; }
+  .agenda-dia .dia { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .agenda-dia .dia strong { font-family: var(--font-display); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+  .agenda-dia .dia span { font-size: var(--text-xs); color: var(--color-text-soft); font-variant-numeric: tabular-nums; }
+  .slots { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .slot {
+    min-height: var(--control-height-sm); padding: 0 var(--space-3);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+    background: var(--color-surface); color: var(--color-text);
+    font: inherit; font-size: var(--text-sm); font-variant-numeric: tabular-nums; cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+  }
+  .slot:hover { background: var(--color-surface-muted); }
+  .slot[aria-pressed="true"] { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-text-inverse); } /* 6.32:1 */
+  .slot-ocupado { border-style: dashed; color: var(--color-text); background: var(--color-surface-muted); cursor: not-allowed; text-decoration: line-through; } /* --color-text sobre --color-surface-muted: 10.76:1 */
+
+  .reserva { margin-top: var(--space-5); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-canvas); padding: var(--space-4); }
+  .reserva h3 { font-size: var(--text-md); }
+  .reserva dl { margin: var(--space-3) 0 0; display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-4); font-size: var(--text-sm); }
+  .reserva dt { color: var(--color-text-soft); }
+  .reserva dd { margin: 0; font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+  .reserva .total { font-family: var(--font-display); font-size: var(--text-lg); }
+  .siguiente { margin-top: var(--space-3); font-size: var(--text-xs); color: var(--color-text-soft); }
+  .siguiente ol { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+  .siguiente li { margin-top: 2px; }
+  .reserva .btn-primary { width: 100%; margin-top: var(--space-3); }
+
+  .semana { font-size: var(--text-xs); color: var(--color-text-soft); margin-bottom: var(--space-2); } /* 5.18:1 sobre blanco */
+  .slots-tabla { width: 100%; border-collapse: collapse; }
+  .slots-tabla th { padding: var(--space-2) var(--space-3) var(--space-2) 0; text-align: left; font-weight: var(--weight-medium); white-space: nowrap; vertical-align: top; border-top: 1px solid var(--color-border); font-size: var(--text-sm); }
+  .slots-tabla td { padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
+  .slots-tabla tr:first-child th, .slots-tabla tr:first-child td { border-top: 0; }
+  .slots-tabla .slots { gap: var(--space-1); }
+  .ficha .bloque + .bloque { margin-top: var(--space-4); }
+  .ficha { padding: var(--space-4); }
+  .ficha .bloque + .bloque { margin-top: var(--space-3); }
+  .ficha .bloque > h3 { margin-bottom: var(--space-1); }
+  .reserva { padding: var(--space-3) var(--space-4); }
+  .ficha .tarifa { margin-top: var(--space-3); padding: var(--space-2) 0; }
+  .ficha .desc { margin-top: var(--space-3); }
+  .reserva dl { margin-top: var(--space-2); }
+  .reserva .btn-primary { margin-top: var(--space-2); }
+  .nota-pie { margin-top: var(--space-8); padding-top: var(--space-4); border-top: 1px solid var(--color-border); font-size: var(--text-xs); color: var(--color-text-soft); display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+
+  @media (max-width: 1080px) {
+    .columnas { grid-template-columns: 1fr; }
+    .ficha { position: static; }
+    .campos { grid-template-columns: 1fr 1fr; }
+    .campos .campo-q { grid-column: 1 / -1; }
+  }
+  @media (max-width: 720px) {
+    .wrap { padding: 0 var(--space-4) var(--space-8); }
+    .topbar-in { flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+    .mainnav { order: 3; width: 100%; margin-left: 0; overflow-x: auto; }
+    .brand-sub { display: none; }
+    .campos { grid-template-columns: 1fr; }
+    .pantalla .fecha { text-align: left; }
+    .indice { overflow-x: auto; }
+    table { min-width: 34rem; }
+    .reserva dl { grid-template-columns: 1fr; gap: 0; }
+    .reserva dd { margin-bottom: var(--space-2); }
+  }
+  @media (max-width: 420px) {
+    .who-role { display: none; }
+    .pantalla h1 { font-size: var(--text-xl); }
+    .limpiar { margin-left: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root { --motion-fast: 1ms; --motion-base: 1ms; --motion-slow: 1ms; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#resultados">Saltar al índice de profesionales</a>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <span class="wordmark">MiDoc</span>
+      <span class="brand-sub">Consulta médica · Jalisco</span>
+    </div>
+    <nav class="mainnav" aria-label="Navegación principal">
+      <button type="button" aria-current="page">Buscar</button>
+      <button type="button">Mis citas</button>
+      <button type="button">Mi expediente</button>
+      <button type="button">Mensajes</button>
+    </nav>
+    <div class="session">
+      <button class="bell" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+        </svg>
+        <span class="bell-count" aria-hidden="true">2</span>
+        <span class="sr-only">Notificaciones: 2 sin leer</span>
+      </button>
+      <div class="who">
+        <span class="who-name">Mariana Robles</span>
+        <span class="who-role">Paciente</span>
+      </div>
+      <span class="avatar" aria-hidden="true">MR</span>
+    </div>
+  </div>
+</header>
+<main class="wrap" id="contenido">
+  <div class="pantalla">
+    <div>
+      <p class="eyebrow">Paso 1 de 3 · Buscar</p>
+      <h1>Encuentra a tu profesional y aparta el horario.</h1>
+      <p class="lede">Directorio de profesionales con suscripción vigente en Jalisco. Elige un renglón para ver su ficha a la derecha.</p>
+    </div>
+    <p class="fecha">Miércoles 18 de noviembre de 2026<br>Guadalajara, Jalisco</p>
+  </div>
+
+  <section class="buscador" aria-labelledby="buscar-t">
+    <h2 class="sr-only" id="buscar-t">Buscar profesionales</h2>
+    <form role="search" aria-labelledby="buscar-t">
+      <div class="campos">
+        <div class="field campo-q">
+          <label for="q">¿Qué necesitas atender?</label>
+          <input id="q" name="q" type="search" aria-invalid="true" aria-describedby="q-error"
+                 value="dolor en el pecho que aparece al subir escaleras y se quita cuando me detengo, además de cansancio desde hace dos semanas">
+          <p class="error" id="q-error" role="alert">La búsqueda admite hasta 100 caracteres. Recorta el texto para buscar de nuevo.</p>
+        </div>
+        <div class="field">
+          <label for="esp">Especialidad</label>
+          <select id="esp" name="esp">
+            <option>Todas las especialidades</option>
+            <option>Medicina familiar</option>
+            <option>Cardiología</option>
+            <option>Dermatología</option>
+            <option>Traumatología y ortopedia</option>
+            <option>Pediatría</option>
+            <option>Medicina interna</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ciudad">Ciudad</label>
+          <select id="ciudad" name="ciudad">
+            <option>Guadalajara</option>
+            <option>Zapopan</option>
+            <option>Tlaquepaque</option>
+            <option>Tonalá</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="orden">Ordenar por</label>
+          <select id="orden" name="orden">
+            <option selected>Precio: menor a mayor</option>
+            <option>Precio: mayor a menor</option>
+            <option>Próximo horario disponible</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Buscar</button>
+      </div>
+
+      <div class="filtros-activos">
+        <span class="rotulo" id="filtros-t">Filtros activos</span>
+        <ul class="chips" aria-labelledby="filtros-t">
+          <li>
+            <button class="chip" type="button" aria-label="Quitar filtro Ciudad: Guadalajara">
+              Ciudad: Guadalajara <span class="chip-x" aria-hidden="true">×</span>
+            </button>
+          </li>
+        </ul>
+        <button class="btn btn-ghost btn-sm limpiar" type="button">Limpiar todo</button>
+      </div>
+    </form>
+  </section>
+
+  <div class="columnas">
+    <section id="resultados" aria-labelledby="indice-t">
+      <div class="meta-resultado">
+        <h2 id="indice-t">Índice de profesionales</h2>
+        <p class="cuenta"><strong>6</strong> profesionales en Guadalajara · precio de menor a mayor</p>
+      </div>
+
+      <div class="indice" role="region" aria-label="Índice de profesionales, desplazable en pantallas angostas" tabindex="0">
+        <table>
+          <caption>6 profesionales con suscripción vigente en Guadalajara, ordenados por precio</caption>
+          <thead>
+            <tr>
+              <th scope="col">Profesional</th>
+              <th scope="col">Ciudad</th>
+              <th scope="col" class="num">Consulta</th>
+              <th scope="col">Próximo horario</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><button class="doc-btn" type="button">Dra. Ana López<span class="doc-meta">Medicina familiar · 30 min</span></button></td>
+              <td>Guadalajara<br><span class="doc-meta">Col. Americana</span></td>
+              <td class="num precio">$600.00<small>MXN</small></td>
+              <td class="prox">Hoy · 17:30<small>miércoles 18</small></td>
+            </tr>
+            <tr>
+              <td><button class="doc-btn" type="button">Dra. Paulina Cárdenas<span class="doc-meta">Pediatría · 30 min</span></button></td>
+              <td>Guadalajara<br><span class="doc-meta">Col. Mexicaltzingo</span></td>
+              <td class="num precio">$700.00<small>MXN</small></td>
+              <td class="prox">Hoy · 18:00<small>miércoles 18</small></td>
+            </tr>
+            <tr>
+              <td><button class="doc-btn" type="button">Dra. Ximena Barajas<span class="doc-meta">Dermatología · 30 min</span></button></td>
+              <td>Guadalajara<br><span class="doc-meta">Col. Italia</span></td>
+              <td class="num precio">$780.00<small>MXN</small></td>
+              <td class="prox">Jue 19 · 09:00<small>jueves 19</small></td>
+            </tr>
+            <tr>
+              <td><button class="doc-btn" type="button">Dr. Emilio Sahagún<span class="doc-meta">Medicina interna · 40 min</span></button></td>
+              <td>Guadalajara<br><span class="doc-meta">Col. Chapalita</span></td>
+              <td class="num precio">$820.00<small>MXN</small></td>
+              <td class="prox">Jue 19 · 12:00<small>jueves 19</small></td>
+            </tr>
+            <tr class="fila-sel">
+              <td><button class="doc-btn" type="button" aria-current="true">Dr. Gilberto Anaya<span class="doc-meta">Cardiología · 45 min · En ficha</span></button></td>
+              <td>Guadalajara<br><span class="doc-meta">Col. Ladrón de Guevara</span></td>
+              <td class="num precio">$850.00<small>MXN</small></td>
+              <td class="prox">Jue 19 · 09:30<small>jueves 19</small></td>
+            </tr>
+            <tr>
+              <td><button class="doc-btn" type="button">Dr. Óscar Villalobos<span class="doc-meta">Traumatología y ortopedia · 45 min</span></button></td>
+              <td>Guadalajara<br><span class="doc-meta">Col. Moderna</span></td>
+              <td class="num precio">$950.00<small>MXN</small></td>
+              <td class="prox">Vie 20 · 10:15<small>viernes 20</small></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="nota-pie">
+        <span>Las citas quedan pendientes hasta que el profesional las confirme.</span>
+        <span>Pagos en línea simulados en esta versión.</span>
+      </p>
+    </section>
+
+    <aside class="ficha" aria-labelledby="ficha-t">
+      <div class="ficha-head">
+        <div>
+          <h2 id="ficha-t">Dr. Gilberto Anaya</h2>
+          <p class="linaje">Cardiología · Guadalajara, Col. Ladrón de Guevara</p>
+        </div>
+        <span class="badge badge-success">Vigente</span>
+      </div>
+
+      <div class="tarifa">
+        <span class="cifra">$850.00</span>
+        <span class="nota">MXN · consulta de 45 min<br>Pago en el consultorio</span>
+      </div>
+
+      <p class="desc">Control de hipertensión, seguimiento de arritmias y valoración de dolor torácico. Electrocardiograma en la misma consulta.</p>
+
+      <section class="bloque" aria-labelledby="libres-t">
+        <h3 id="libres-t">Próximos horarios libres</h3>
+        <p class="semana">Horario semanal: lunes a viernes 09:00–14:00 y 16:00–19:00 · sábado 09:00–13:00.</p>
+        <table class="slots-tabla">
+          <caption class="sr-only">Horarios libres del Dr. Gilberto Anaya en los próximos días. Cada cita dura 45 minutos.</caption>
+          <tbody>
+            <tr>
+              <th scope="row">Jueves 19</th>
+              <td>
+                <div class="slots">
+                  <button class="slot" type="button" aria-pressed="true">09:30</button>
+                  <button class="slot" type="button" aria-pressed="false">10:15</button>
+                  <button class="slot" type="button" aria-pressed="false">11:00</button>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Viernes 20</th>
+              <td>
+                <div class="slots">
+                  <button class="slot" type="button" aria-pressed="false">09:30</button>
+                  <button class="slot" type="button" aria-pressed="false">16:00</button>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Sábado 21</th>
+              <td>
+                <div class="slots">
+                  <button class="slot" type="button" aria-pressed="false">09:00</button>
+                  <button class="slot" type="button" aria-pressed="false">10:15</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="reserva" aria-labelledby="reserva-t">
+        <h3 id="reserva-t">Vas a agendar</h3>
+        <dl>
+          <dt>Cuándo</dt><dd>Jueves 19 · 09:30 a 10:15</dd>
+          <dt>Costo</dt><dd class="total">$850.00 MXN</dd>
+          <dt>Estado inicial</dt><dd>Pendiente de confirmación</dd>
+        </dl>
+        <p class="siguiente">Queda pendiente hasta que el Dr. Anaya la confirme; te avisamos por notificación y el pago se hace en el consultorio (en línea es simulado).</p>
+        <button class="btn btn-primary" type="button">Agendar jueves 19 · 09:30</button>
+        <p class="bloque-nota" style="margin-top: var(--space-2)">Puedes cancelar desde «Mis citas» sin costo.</p>
+      </section>
+    </aside>
+  </div>
+</main>
+
+</body>
+</html>

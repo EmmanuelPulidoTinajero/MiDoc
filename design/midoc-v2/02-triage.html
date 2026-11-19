@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiDoc — Triaje por pasos · Búsqueda y agenda del paciente</title>
+<!--
+  Dirección 2 de 3 · Triaje por pasos.
+  Lienzo objetivo 1440 × 1200 px. Contenedor: --container-max (72rem).
+  Identidad: design/system.md (papel cálido, tinta verde, serif de display, filete clínico).
+  Estrategia: una decisión por paso (qué te pasa - dónde - cuándo). Los profesionales
+  se revelan sólo cuando el triaje acotó la búsqueda; cada paso se puede cambiar sin
+  perder los demás. Estado no feliz visible: un horario que se ocupó mientras decidías.
+-->
+<style>
+  /* Tokens copiados verbatim de design/system.html:9-56. */
+  :root {
+    --color-canvas: #f4f2ec;
+    --color-surface: #ffffff;
+    --color-surface-muted: #eae7e0;
+    --color-border: #dcd8cf;
+    --color-border-strong: #7d8f86;
+    --color-text: #17352b;
+    --color-text-soft: #5b7268;
+    --color-text-disabled: #9aaba2;
+    --color-text-inverse: #ffffff;
+    --color-primary: #246b59;
+    --color-primary-hover: #1d5a46;
+    --color-primary-active: #164a3d;
+    --color-primary-soft: #d5efe2;
+    --color-accent: #8a4b00;
+    --color-danger: #a83a32;
+    --color-danger-soft: #f8dcd9;
+    --color-warning: #6b4d00;
+    --color-warning-soft: #fff7e5;
+    --color-info: #24427a;
+    --color-info-soft: #dde6f7;
+    --color-success: #1d5a46;
+    --color-success-soft: #d5efe2;
+    --color-focus: #17352b;
+
+    --font-display: ui-serif, Georgia, "Times New Roman", serif;
+    --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem;
+    --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem;
+    --space-12: 3rem; --space-16: 4rem; --space-20: 5rem;
+
+    --radius-sm: 0.25rem; --radius-md: 0.5rem; --radius-lg: 0.75rem;
+    --radius-xl: 1.25rem; --radius-pill: 999px;
+
+    --control-height: 2.5rem;
+    --measure: 68ch;
+    --container-max: 72rem;
+
+    --shadow-1: 0 1px 2px rgba(23,53,43,.06), 0 1px 1px rgba(23,53,43,.04);
+    --shadow-2: 0 4px 12px rgba(23,53,43,.08), 0 1px 3px rgba(23,53,43,.06);
+    --shadow-3: 0 16px 40px rgba(23,53,43,.14), 0 2px 8px rgba(23,53,43,.08);
+
+    --motion-fast: 120ms;
+    --motion-base: 200ms;
+    --motion-slow: 320ms;
+    --ease-standard: cubic-bezier(.2,.6,.2,1);
+    --ease-entrance: cubic-bezier(.16,1,.3,1);
+
+    /* Tokens de design/system.md que no aparecen en el bloque de system.html
+       (§Tipografía, §Radios y medidas). Valores del sistema, no inventados. */
+    --text-xs: 0.75rem;
+    --text-sm: 0.8125rem;
+    --text-base: 0.9375rem;
+    --text-md: 1.0625rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.5rem;
+    --text-2xl: 1.875rem;
+    --text-3xl: 2.5rem;
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --tracking-display: -0.01em;
+    --tracking-label: 0.06em;
+    --control-height-sm: 2rem;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--text-base);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: var(--tracking-display);
+    font-weight: var(--weight-semibold);
+    margin: 0;
+  }
+  h1 { font-size: var(--text-2xl); line-height: 1.2; }
+  h2 { font-size: var(--text-xl); line-height: 1.3; }
+  h3 { font-size: var(--text-lg); line-height: 1.45; }
+  h4 { font-size: var(--text-md); line-height: 1.45; }
+  p { margin: 0; }
+  a { color: var(--color-primary); } /* 5.65:1 sobre --color-canvas */
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  .skip-link {
+    position: absolute; left: var(--space-4); top: var(--space-4); z-index: 10;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-surface); color: var(--color-text);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+    font-size: var(--text-sm); font-weight: var(--weight-medium);
+    transform: translateY(-200%);
+    transition: transform var(--motion-fast) var(--ease-standard);
+  }
+  .skip-link:focus-visible { transform: translateY(0); }
+
+  .wrap { max-width: var(--container-max); margin: 0 auto; padding: 0 var(--space-6) var(--space-12); }
+
+  /* ── Barra superior ───────────────────────────────────────────────── */
+  .topbar {
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .topbar-in {
+    max-width: var(--container-max); margin: 0 auto;
+    padding: var(--space-3) var(--space-6);
+    display: flex; align-items: center; gap: var(--space-8);
+  }
+  .brand { display: flex; align-items: baseline; gap: var(--space-3); }
+  .wordmark {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    line-height: 1;
+    letter-spacing: var(--tracking-display);
+    font-weight: var(--weight-semibold);
+  }
+  .wordmark::after {
+    content: ""; display: inline-block; vertical-align: baseline;
+    width: 6px; height: 6px; margin-left: var(--space-1);
+    border-radius: 50%; background: var(--color-accent);
+  }
+  .brand-sub {
+    font-size: var(--text-xs); letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--color-text-soft);
+  }
+  .mainnav { display: flex; gap: var(--space-1); margin-left: auto; }
+  .mainnav button {
+    appearance: none; border: 0; background: none;
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-3); border-radius: var(--radius-md);
+    font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);
+    color: var(--color-text-soft); cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard);
+  }
+  .mainnav button:hover { background: var(--color-surface-muted); color: var(--color-text); }
+  .mainnav button[aria-current="page"] {
+    color: var(--color-text);
+    box-shadow: inset 0 -2px 0 var(--color-primary);
+  }
+
+  .session { display: flex; align-items: center; gap: var(--space-3); }
+  .bell {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: var(--control-height); height: var(--control-height);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+    background: var(--color-surface); color: var(--color-text); cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard);
+  }
+  .bell:hover { background: var(--color-surface-muted); }
+  .bell-count {
+    position: absolute; top: 3px; right: 3px;
+    min-width: 14px; height: 14px; padding: 0 3px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--color-accent); color: var(--color-text-inverse);
+    font-size: 10px; font-weight: var(--weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+  .who { display: flex; flex-direction: column; line-height: 1.2; }
+  .who-name { font-size: var(--text-sm); font-weight: var(--weight-medium); }
+  .who-role {
+    font-size: var(--text-xs); letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--color-text-soft);
+  }
+  .avatar {
+    width: var(--control-height); height: var(--control-height);
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--color-primary-soft);
+    color: var(--color-success); font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  }
+
+  /* ── Controles ────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+    min-height: var(--control-height); padding: 0 var(--space-4);
+    border: 1px solid transparent; border-radius: var(--radius-md);
+    font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard),
+                border-color var(--motion-fast) var(--ease-standard),
+                color var(--motion-fast) var(--ease-standard);
+  }
+  .btn-primary { background: var(--color-primary); color: var(--color-text-inverse); } /* 6.32:1 */
+  .btn-primary:hover { background: var(--color-primary-hover); } /* 8.07:1 */
+  .btn-primary:active { background: var(--color-primary-active); } /* 10.09:1 */
+  .btn-secondary { background: var(--color-surface); border-color: var(--color-border-strong); color: var(--color-text); }
+  .btn-secondary:hover { background: var(--color-surface-muted); }
+  .btn-ghost { background: transparent; color: var(--color-text); }
+  .btn-ghost:hover { background: var(--color-surface-muted); }
+  .btn-sm { min-height: var(--control-height-sm); padding: 0 var(--space-3); font-size: var(--text-xs); }
+  .btn[disabled] {
+    background: var(--color-surface-muted); color: var(--color-text-disabled);
+    border-color: var(--color-border); cursor: not-allowed;
+  }
+
+  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .field > label {
+    font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text);
+  }
+  .field input, .field select {
+    width: 100%; min-height: var(--control-height);
+    padding: 0 var(--space-3);
+    font: inherit; font-size: var(--text-sm); color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong); /* 3.42:1 sobre blanco, y 3.05:1 sobre canvas */
+    border-radius: var(--radius-md);
+    transition: border-color var(--motion-fast) var(--ease-standard);
+  }
+  .field input::placeholder { color: var(--color-text-disabled); }
+  .field input[aria-invalid="true"] { border-color: var(--color-danger); }
+  .field .hint { font-size: var(--text-xs); color: var(--color-text-soft); } /* 5.18:1 sobre blanco */
+  .field .error { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--color-danger); } /* 6.33:1 sobre blanco */
+
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0; margin: 0; list-style: none; }
+  .chip {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    min-height: var(--control-height-sm); padding: 0 var(--space-3);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-pill);
+    background: var(--color-surface); color: var(--color-text);
+    font: inherit; font-size: var(--text-xs); font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard);
+  }
+  .chip:hover { background: var(--color-surface-muted); }
+  .chip-static { background: var(--color-primary-soft); border-color: transparent; color: var(--color-success); } /* 6.64:1 */
+  .chip-static:hover { background: var(--color-primary-soft); }
+  .chip-x { font-family: var(--font-ui); font-size: var(--text-sm); line-height: 1; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    padding: 1px var(--space-3); border-radius: var(--radius-pill);
+    font-size: var(--text-xs); font-weight: var(--weight-medium);
+  }
+  .badge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .badge-success { background: var(--color-success-soft); color: var(--color-success); } /* 6.64:1 */
+  .badge-warning { background: var(--color-warning-soft); color: var(--color-warning); } /* 7.33:1 */
+  .badge-danger { background: var(--color-danger-soft); color: var(--color-danger); } /* 4.89:1 */
+
+  .eyebrow {
+    font-size: var(--text-xs); letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--color-text-soft); font-weight: var(--weight-medium);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: var(--font-mono); }
+
+  /* ── Pantalla y triaje ────────────────────────────────────────────── */
+  main { padding-top: var(--space-8); }
+  .pantalla { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+  .pantalla .lede { color: var(--color-text-soft); max-width: 76ch; margin-top: var(--space-2); } /* 4.63:1 */
+  .pantalla .fecha { font-size: var(--text-sm); color: var(--color-text-soft); text-align: right; }
+
+  .triaje { margin-top: var(--space-6); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+  .pasos { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .paso { padding: var(--space-5); border-left: 1px solid var(--color-border); min-width: 0; }
+  .paso:first-child { border-left: 0; }
+  .paso-cab { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .paso-num {
+    width: var(--space-8); height: var(--space-8);
+    border: 1px solid var(--color-border-strong); border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: var(--font-display); font-size: var(--text-md); font-variant-numeric: tabular-nums;
+    color: var(--color-text-soft);
+  }
+  .paso-hecho .paso-num { border-color: var(--color-primary); background: var(--color-primary-soft); color: var(--color-success); } /* 6.64:1 */
+  .paso h2 { font-size: var(--text-lg); margin-top: var(--space-2); }
+  .opciones { border: 0; margin: var(--space-4) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .opciones legend { padding: 0; margin-bottom: var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-medium); }
+  .opcion {
+    min-height: var(--control-height); padding: 0 var(--space-4);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-pill);
+    background: var(--color-surface); color: var(--color-text);
+    font: inherit; font-size: var(--text-sm); cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+  }
+  .opcion:not([aria-pressed="true"]):hover { background: var(--color-surface-muted); }
+  .opcion[aria-pressed="true"] { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-text-inverse); } /* 6.32:1 */
+  .paso .field { margin-top: var(--space-4); }
+  .paso .btn { margin-top: var(--space-3); }
+  .triaje-pie { border-top: 1px solid var(--color-border); padding: var(--space-3) var(--space-5); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .pie-esp { display: flex; align-items: center; gap: var(--space-2); margin-left: var(--space-3); }
+  .pie-esp label { font-size: var(--text-xs); color: var(--color-text-soft); }
+  .pie-esp select { min-height: var(--control-height-sm); padding: 0 var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); font: inherit; font-size: var(--text-xs); }
+  .triaje-pie .rotulo { font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-soft); }
+
+  .revelado { margin-top: var(--space-6); }
+  .meta-resultado { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+  .meta-resultado .cuenta { font-size: var(--text-sm); color: var(--color-text-soft); }
+  .meta-resultado .cuenta strong { color: var(--color-text); font-weight: var(--weight-semibold); }
+  .dos-col > section, .dos-col > aside { min-width: 0; }
+  .dos-col { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(21rem, 1fr); gap: var(--space-8); align-items: start; }
+
+  .lista { list-style: none; margin: 0; padding: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+  .item { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: start; transition: background var(--motion-fast) var(--ease-standard); }
+  .item:first-child { border-top: 0; }
+  .item:hover { background: var(--color-surface-muted); }
+  .item:hover .item-meta, .item:hover .item-cifra small { color: var(--color-text); } /* --color-text sobre --color-surface-muted: 10.76:1 */
+  .item-sel { background: var(--color-primary-soft); box-shadow: inset 2px 0 0 var(--color-primary); } /* texto --color-text: 10.93:1 */
+  .item-sel:hover { background: var(--color-primary-soft); }
+  .item-btn {
+    appearance: none; border: 0; background: none; padding: 0; text-align: left; cursor: pointer;
+    font-family: var(--font-display); font-size: var(--text-md); font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-display); color: var(--color-text);
+  }
+  .item-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .item-meta { grid-column: 1 / -1; font-size: var(--text-xs); color: var(--color-text-soft); } /* 5.18:1 */
+  .item-sel .item-meta { color: var(--color-text); }
+  .item-cifra { text-align: right; font-family: var(--font-display); font-size: var(--text-md); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .item-cifra small { display: block; font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-soft); font-variant-numeric: normal; }
+  .item-sel .item-cifra small { color: var(--color-text); }
+
+  .alerta {
+    margin-top: var(--space-3); display: flex; align-items: flex-start; gap: var(--space-2);
+    padding: var(--space-3); border-radius: var(--radius-md);
+    background: var(--color-danger-soft); color: var(--color-danger); /* 4.89:1 */
+    font-size: var(--text-xs); font-weight: var(--weight-medium);
+  }
+  .alerta svg { flex: none; margin-top: 1px; }
+
+  /* ── Ficha del profesional ────────────────────────────────────────── */
+  .ficha { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-5); position: sticky; top: var(--space-4); }
+  .ficha-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+  .ficha h2 { margin-top: var(--space-1); }
+  .ficha .linaje { font-size: var(--text-sm); color: var(--color-text-soft); margin-top: var(--space-1); }
+  .ficha .desc { margin-top: var(--space-4); font-size: var(--text-sm); max-width: var(--measure); }
+  .tarifa { display: flex; align-items: baseline; gap: var(--space-3); margin-top: var(--space-4); padding: var(--space-3) 0; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+  .tarifa .cifra { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display); font-variant-numeric: tabular-nums; }
+  .tarifa .nota { font-size: var(--text-xs); color: var(--color-text-soft); }
+  .bloque { margin-top: var(--space-5); }
+  .bloque > h3 { margin-bottom: var(--space-2); }
+  .bloque-nota { font-size: var(--text-xs); color: var(--color-text-soft); margin-bottom: var(--space-3); }
+
+  .horario-table td, .horario-table th { padding: var(--space-2) 0; border-top: 1px solid var(--color-border); font-size: var(--text-sm); }
+  .horario-table thead th { border-top: 0; }
+  .horario-table th[scope="row"] { font-weight: var(--weight-medium); padding-right: var(--space-3); white-space: nowrap; }
+  .horario-table td { font-variant-numeric: tabular-nums; color: var(--color-text-soft); }
+
+  .agenda-dia { border-top: 1px solid var(--color-border); padding: var(--space-3) 0; }
+  .agenda-dia:first-of-type { border-top: 0; }
+  .agenda-dia .dia { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .agenda-dia .dia strong { font-family: var(--font-display); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+  .agenda-dia .dia span { font-size: var(--text-xs); color: var(--color-text-soft); font-variant-numeric: tabular-nums; }
+  .slots { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .slot {
+    min-height: var(--control-height-sm); padding: 0 var(--space-3);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+    background: var(--color-surface); color: var(--color-text);
+    font: inherit; font-size: var(--text-sm); font-variant-numeric: tabular-nums; cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+  }
+  .slot:hover { background: var(--color-surface-muted); }
+  .slot[aria-pressed="true"] { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-text-inverse); } /* 6.32:1 */
+  .slot-ocupado { border-style: dashed; color: var(--color-text-soft); background: var(--color-surface-muted); cursor: not-allowed; text-decoration: line-through; }
+
+  .reserva { margin-top: var(--space-5); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-canvas); padding: var(--space-4); }
+  .reserva h3 { font-size: var(--text-md); }
+  .reserva dl { margin: var(--space-3) 0 0; display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-4); font-size: var(--text-sm); }
+  .reserva dt { color: var(--color-text-soft); }
+  .reserva dd { margin: 0; font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+  .reserva .total { font-family: var(--font-display); font-size: var(--text-lg); }
+  .siguiente { margin-top: var(--space-3); font-size: var(--text-xs); color: var(--color-text-soft); }
+  .siguiente ol { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+  .siguiente li { margin-top: 2px; }
+  .reserva .btn-primary { width: 100%; margin-top: var(--space-3); }
+
+  .paso { padding: var(--space-4) var(--space-5); }
+  .paso-acciones { display: flex; align-items: center; gap: var(--space-2); }
+  .paso .field { margin-top: var(--space-3); }
+  .paso .opciones { margin-top: var(--space-3); }
+  .semana { font-size: var(--text-sm); color: var(--color-text-soft); } /* 5.18:1 sobre blanco */
+  .slots-tabla { width: 100%; border-collapse: collapse; }
+  .slots-tabla th { padding: var(--space-2) var(--space-3) var(--space-2) 0; text-align: left; font-weight: var(--weight-medium); white-space: nowrap; vertical-align: top; border-top: 1px solid var(--color-border); font-size: var(--text-sm); }
+  .slots-tabla td { padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
+  .slots-tabla tr:first-child th, .slots-tabla tr:first-child td { border-top: 0; }
+  .slots-tabla .slots { gap: var(--space-1); }
+  .ficha .bloque + .bloque { margin-top: var(--space-4); }
+  .ficha { padding: var(--space-4) var(--space-4) var(--space-5); }
+  .ficha .tarifa { margin-top: var(--space-3); padding: var(--space-2) 0; }
+  .ficha .desc { margin-top: var(--space-3); }
+  .reserva dl { margin-top: var(--space-2); }
+  .reserva .btn-primary { margin-top: var(--space-2); }
+  .nota-pie { margin-top: var(--space-8); padding-top: var(--space-4); border-top: 1px solid var(--color-border); font-size: var(--text-xs); color: var(--color-text-soft); display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+
+  main { padding-top: var(--space-6); }
+  .revelado { margin-top: var(--space-5); }
+  .meta-resultado { margin-bottom: var(--space-3); }
+  .ficha .tarifa { margin-top: var(--space-2); padding: 0; border-top: 0; border-bottom: 0; }
+  .ficha .desc { font-size: var(--text-sm); }
+  .slots-tabla th, .slots-tabla td { padding-top: var(--space-1); padding-bottom: var(--space-1); }
+  .alerta { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); }
+  .reserva { padding: var(--space-3) var(--space-4); }
+  .reserva dl { gap: 2px var(--space-4); }
+  .reserva .siguiente { font-size: var(--text-xs); }
+  .triaje { margin-top: var(--space-5); }
+  .paso { padding: var(--space-3) var(--space-4); }
+  .paso h2 { margin-top: var(--space-1); }
+  .paso .field, .paso .opciones { margin-top: var(--space-2); }
+  .paso .opciones { gap: var(--space-1); }
+  .opcion { min-height: var(--control-height-sm); }
+  @media (max-width: 1080px) {
+    .pasos { grid-template-columns: 1fr; }
+    .paso { border-left: 0; border-top: 1px solid var(--color-border); }
+    .paso:first-child { border-top: 0; }
+    .dos-col { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 720px) {
+    .wrap { padding: 0 var(--space-4) var(--space-8); }
+    .topbar-in { flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+    .mainnav { order: 3; width: 100%; margin-left: 0; overflow-x: auto; }
+    .brand-sub { display: none; }
+    .pantalla .fecha { text-align: left; }
+    .item { grid-template-columns: 1fr; }
+    .item-cifra { text-align: left; }
+  }
+  @media (max-width: 420px) {
+    .who-role { display: none; }
+    .pantalla h1 { font-size: var(--text-xl); }
+    .triaje-pie .btn { width: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root { --motion-fast: 1ms; --motion-base: 1ms; --motion-slow: 1ms; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#resultados">Saltar al índice de profesionales</a>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <span class="wordmark">MiDoc</span>
+      <span class="brand-sub">Consulta médica · Jalisco</span>
+    </div>
+    <nav class="mainnav" aria-label="Navegación principal">
+      <button type="button" aria-current="page">Buscar</button>
+      <button type="button">Mis citas</button>
+      <button type="button">Mi expediente</button>
+      <button type="button">Mensajes</button>
+    </nav>
+    <div class="session">
+      <button class="bell" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+        </svg>
+        <span class="bell-count" aria-hidden="true">2</span>
+        <span class="sr-only">Notificaciones: 2 sin leer</span>
+      </button>
+      <div class="who">
+        <span class="who-name">Mariana Robles</span>
+        <span class="who-role">Paciente</span>
+      </div>
+      <span class="avatar" aria-hidden="true">MR</span>
+    </div>
+  </div>
+</header>
+<main class="wrap" id="contenido">
+  <div class="pantalla">
+    <div>
+      <p class="eyebrow">Triaje · tres decisiones</p>
+      <h1>Primero qué te pasa. Después, quién puede atenderte.</h1>
+      <p class="lede">Síntoma, zona y día: los profesionales aparecen cuando el triaje acotó la búsqueda.</p>
+    </div>
+    <p class="fecha">Miércoles 18 de noviembre de 2026<br>Guadalajara, Jalisco</p>
+  </div>
+
+  <section class="triaje" aria-labelledby="triaje-t">
+    <h2 class="sr-only" id="triaje-t">Triaje en tres pasos</h2>
+    <ol class="pasos">
+      <li class="paso paso-hecho" aria-labelledby="p1-t">
+        <div class="paso-cab">
+          <span class="paso-num" aria-hidden="true">1</span>
+          <span class="paso-acciones"><span class="badge badge-success">Elegido</span><button class="btn btn-ghost btn-sm" type="button">Cambiar</button></span>
+        </div>
+        <h2 id="p1-t">¿Qué te pasa?</h2>
+        <div class="field">
+          <label for="malestar">Describe tu molestia</label>
+          <input id="malestar" type="search" value="Dolor de rodilla al subir escaleras" aria-describedby="malestar-hint">
+          <span class="hint" id="malestar-hint">Con tus palabras; sirve para sugerir la especialidad.</span>
+        </div>
+        <fieldset class="opciones">
+          <legend>Síntomas frecuentes</legend>
+          <button class="opcion" type="button" aria-pressed="true">Dolor de rodilla</button>
+          <button class="opcion" type="button" aria-pressed="false">Dolor de espalda</button>
+          <button class="opcion" type="button" aria-pressed="false">Palpitaciones</button>
+          <button class="opcion" type="button" aria-pressed="false">Migraña</button>
+        </fieldset>
+      </li>
+
+      <li class="paso paso-hecho" aria-labelledby="p2-t">
+        <div class="paso-cab">
+          <span class="paso-num" aria-hidden="true">2</span>
+          <span class="paso-acciones"><span class="badge badge-success">Elegido</span><button class="btn btn-ghost btn-sm" type="button">Cambiar</button></span>
+        </div>
+        <h2 id="p2-t">¿Dónde?</h2>
+        <div class="field">
+          <label for="zona">Zona de atención</label>
+          <select id="zona" aria-describedby="zona-hint">
+            <option selected>Guadalajara y zona metropolitana</option>
+            <option>Solo Guadalajara centro</option>
+            <option>Solo Zapopan</option>
+            <option>Solo Tlaquepaque</option>
+          </select>
+          <span class="hint" id="zona-hint">Incluye Zapopan, Tlaquepaque y Tonalá.</span>
+        </div>
+      </li>
+
+      <li class="paso" aria-labelledby="p3-t">
+        <div class="paso-cab">
+          <span class="paso-num" aria-hidden="true">3</span>
+          <span class="badge badge-warning">En curso</span>
+        </div>
+        <h2 id="p3-t">¿Cuándo?</h2>
+        <fieldset class="opciones">
+          <legend>Día que te acomoda</legend>
+          <button class="opcion" type="button" aria-pressed="true">Jue 19</button>
+          <button class="opcion" type="button" aria-pressed="false">Vie 20</button>
+          <button class="opcion" type="button" aria-pressed="false">Sáb 21</button>
+        </fieldset>
+        <div class="field">
+          <label for="orden">Ordenar por</label>
+          <select id="orden">
+            <option selected>Precio: menor a mayor</option>
+            <option>Precio: mayor a menor</option>
+            <option>Próximo horario disponible</option>
+          </select>
+        </div>
+      </li>
+    </ol>
+
+    <div class="triaje-pie">
+      <span class="rotulo" id="chips-t">Tu triaje</span>
+      <ul class="chips" aria-labelledby="chips-t">
+        <li><button class="chip" type="button" aria-label="Quitar respuesta Dolor de rodilla">Dolor de rodilla <span class="chip-x" aria-hidden="true">×</span></button></li>
+        <li><button class="chip" type="button" aria-label="Quitar respuesta Guadalajara y zona metropolitana">Guadalajara y zona metropolitana <span class="chip-x" aria-hidden="true">×</span></button></li>
+        <li><button class="chip" type="button" aria-label="Quitar respuesta Jueves 19 de noviembre">Jueves 19 de noviembre <span class="chip-x" aria-hidden="true">×</span></button></li>
+      </ul>
+      <div class="pie-esp">
+        <label for="esp">Especialidad</label>
+        <select id="esp">
+          <option selected>Todas</option>
+          <option>Traumatología y ortopedia</option>
+          <option>Medicina de rehabilitación</option>
+          <option>Medicina familiar</option>
+          <option>Medicina del deporte</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" type="button" style="margin-left: auto">Limpiar triaje</button>
+    </div>
+  </section>
+
+  <section class="revelado" aria-labelledby="rev-t">
+    <div class="meta-resultado">
+      <h2 id="rev-t">Profesionales que pueden atenderte</h2>
+      <p class="cuenta"><strong>5</strong> coincidencias · jueves 19 · precio de menor a mayor</p>
+    </div>
+
+    <div class="dos-col">
+      <section aria-labelledby="lista-t">
+        <h3 class="sr-only" id="lista-t">Resultados del triaje</h3>
+        <ul class="lista">
+          <li class="item">
+            <button class="item-btn" type="button">Dra. Ana López</button>
+            <span class="item-cifra">$600.00<small>MXN · 30 min</small></span>
+            <span class="item-meta">Medicina familiar · Guadalajara, Col. Americana · Próximo: jueves 19 · 17:30</span>
+          </li>
+          <li class="item">
+            <button class="item-btn" type="button">Dra. Itzel Mata</button>
+            <span class="item-cifra">$740.00<small>MXN · 40 min</small></span>
+            <span class="item-meta">Medicina de rehabilitación · Zapopan, Col. Providencia · Próximo: jueves 19 · 12:30</span>
+          </li>
+          <li class="item">
+            <button class="item-btn" type="button">Dr. Emilio Sahagún</button>
+            <span class="item-cifra">$820.00<small>MXN · 40 min</small></span>
+            <span class="item-meta">Medicina interna · Guadalajara, Col. Chapalita · Próximo: jueves 19 · 12:00</span>
+          </li>
+          <li class="item">
+            <button class="item-btn" type="button">Dr. Tomás Arellano</button>
+            <span class="item-cifra">$880.00<small>MXN · 45 min</small></span>
+            <span class="item-meta">Medicina del deporte · Zapopan, Col. Ciudad del Sol · Próximo: viernes 20 · 08:30</span>
+          </li>
+          <li class="item item-sel">
+            <button class="item-btn" type="button" aria-current="true">Dr. Óscar Villalobos</button>
+            <span class="item-cifra">$950.00<small>MXN · 45 min</small></span>
+            <span class="item-meta">Traumatología y ortopedia · Guadalajara, Col. Moderna · Próximo: jueves 19 · 09:00</span>
+          </li>
+        </ul>
+        <p class="nota-pie"><span>Los 5 atienden dolor de rodilla según el triaje.</span><span>Pagos en línea simulados en esta versión.</span></p>
+      </section>
+
+      <aside class="ficha" aria-labelledby="ficha-t">
+        <div class="ficha-head">
+          <div>
+            <h2 id="ficha-t">Dr. Óscar Villalobos</h2>
+            <p class="linaje">Traumatología y ortopedia · Guadalajara, Col. Moderna</p>
+          </div>
+          <span class="badge badge-success">Vigente</span>
+        </div>
+
+        <div class="tarifa">
+          <span class="cifra">$950.00</span>
+          <span class="nota">MXN · consulta de 45 min<br>Pago en el consultorio</span>
+        </div>
+
+        <p class="desc">Lesiones deportivas, dolor de rodilla y de hombro. Radiografía en el consultorio; los estudios de imagen se cobran aparte.</p>
+
+        <section class="bloque" aria-labelledby="libres-t">
+          <h3 id="libres-t">Próximos horarios libres</h3>
+          <table class="slots-tabla">
+            <caption class="sr-only">Horarios libres del Dr. Óscar Villalobos. Atiende de lunes a viernes de 09:00 a 14:00 y de 16:00 a 19:30, y los sábados de 09:00 a 13:00. Las 10:30 del jueves ya están ocupadas.</caption>
+            <tbody>
+              <tr>
+                <th scope="row">Jueves 19</th>
+                <td>
+                  <div class="slots">
+                    <button class="slot" type="button" aria-pressed="true">09:00</button>
+                    <button class="slot slot-ocupado" type="button" disabled aria-describedby="ocupado-alerta">10:30 <span class="sr-only">ocupado</span></button>
+                    <button class="slot" type="button" aria-pressed="false">12:00</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Viernes 20</th>
+                <td>
+                  <div class="slots">
+                    <button class="slot" type="button" aria-pressed="false">09:00</button>
+                    <button class="slot" type="button" aria-pressed="false">11:30</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="alerta" id="ocupado-alerta" role="alert">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>
+            <span>Ese horario acaba de ser ocupado, elige otro.</span>
+          </p>
+        </section>
+
+        <section class="reserva" aria-labelledby="reserva-t">
+          <h3 id="reserva-t">Vas a agendar</h3>
+          <dl>
+            <dt>Cuándo</dt><dd>Jueves 19 · 09:00 a 09:45</dd>
+            <dt>Costo</dt><dd class="total">$950.00 MXN</dd>
+          </dl>
+          <p class="siguiente">Pendiente hasta que el Dr. Villalobos la confirme; te avisamos y el pago se hace en el consultorio (en línea es simulado).</p>
+          <button class="btn btn-primary" type="button">Agendar jueves 19 · 09:00</button>
+        </section>
+      </aside>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

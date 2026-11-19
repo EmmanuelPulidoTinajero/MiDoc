@@ -1,9 +1,23 @@
-project_name = "midoc"
-aws_region = "us-east-1"
-db_instance_class = "db.t3.micro"
-db_username = "midoc_admin"
-lambda_role_name = "LabRole"
-enable_rds = true
+project_name                     = "midoc"
+aws_region                       = "us-east-1"
+db_instance_class                = "db.t3.micro"
+db_username                      = "midoc_admin"
+lambda_role_name                 = "LabRole"
+enable_rds                       = true
+enable_nat_gateway               = true
+delete_medical_bucket_on_destroy = true
+allow_demo_seed                  = false
+
+# Stripe payment configuration: switch between "test" (sk_test_...) and "live" (sk_live_...)
+payment_mode              = "test"
+stripe_price_amount_cents = 2000
+# Provide real credentials via TF_VAR_* env vars or local terraform.tfvars; never commit secrets.
+# stripe_secret_key     = "sk_test_replace_me"
+# stripe_webhook_secret = "whsec_replace_me"
+
+# Optional CloudWatch alert email notification
+alert_email = ""
+
 # Provide a unique value locally; never commit a real secret.
-jwt_secret = "replace-with-a-random-value-of-at-least-32-characters"
+jwt_secret           = "replace-with-a-random-value-of-at-least-32-characters"
 frontend_bucket_name = ""

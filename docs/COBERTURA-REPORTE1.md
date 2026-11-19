@@ -1,5 +1,7 @@
 # Cobertura funcional del Reporte de fase 1
 
+> **Actualización Fase 3:** Esta tabla conserva la evaluación original de Fase 2 (16/10/2026). Las brechas de **pagos reales** y **recetas PDF en S3** quedaron cerradas con Stripe Checkout y `pdf_receta.py` respectivamente; consulta la trazabilidad integral vigente en [EVALUACION-INTEGRAL.md](EVALUACION-INTEGRAL.md) y la guía de pagos en [PAGOS-STRIPE.md](PAGOS-STRIPE.md).
+
 Revisión del Reporte de fase 1 contra MiDoc. Las ampliaciones se desplegaron el 16 de octubre de 2026 con pruebas sintéticas de los tres flujos. Consultar la [revisión integral](REVISION-INTEGRAL.md) para defectos, correcciones desplegadas y evidencia. Correo SES/SNS no está implementado; las denegaciones de consultas no demuestran por sí solas que el envío esté prohibido.
 
 ## Flujos principales
