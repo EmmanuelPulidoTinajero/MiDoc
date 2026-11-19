@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
 
 export type Role = 'PACIENTE' | 'DOCTOR' | 'CLINICA';
-export type PaymentMode = 'test' | 'live';
+export type PaymentMode = 'test' | 'live' | 'simulado';
 
 export interface SessionUser {
   id: string;

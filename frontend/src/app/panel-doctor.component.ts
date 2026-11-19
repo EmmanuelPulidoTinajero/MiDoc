@@ -239,6 +239,16 @@ export class PanelDoctorComponent implements OnInit {
       const urls = this.buildStripeReturnUrls();
       const checkout = await this.api.createSubscriptionCheckout(urls);
       this.paymentMode.set(checkout.mode);
+      if (checkout.mode === 'simulado') {
+        // Modo simulado: no hay salida a Stripe; se confirma la sesión propia al instante.
+        await this.confirmStripeReturn(checkout.sessionId);
+        this.subscriptionTone.set('success');
+        this.subscriptionMessage.set(
+          `Pago simulado (sin cargo real): suscripción activa. Vigente hasta el ${this.subscription()?.end ?? ''}`.trim(),
+        );
+        this.paying.set(false);
+        return;
+      }
       this.navigateExternal(checkout.checkoutUrl);
     } catch (error) {
       this.subscriptionTone.set('danger');

@@ -39,7 +39,7 @@ class TestTier2F07StripeBoundaries(unittest.TestCase):
         self.assertEqual(chk.status, 201)
         sid = chk.data["sessionId"]
 
-        if self.ctx.stripe_mode != "simulado":
+        if chk.data.get("mode") != "simulado":
             # En modo simulado las sesiones nacen pagadas: el caso "no pagada" no aplica.
             unpaid = self.client.post("/api/subscriptions/confirm", {"sessionId": sid}, token=d1_tok)
             self.assertIn(unpaid.status, (400, 402), unpaid.text)
@@ -54,12 +54,12 @@ class TestTier2F07StripeBoundaries(unittest.TestCase):
         self.assertEqual(d2_sub.data["history"], [])
 
     def test_t2_f07_04_invalid_tampered_wrong_secret_expired_webhook_signature_rejected(self) -> None:
-        if self.ctx.stripe_mode == "simulado":
-            # Los webhooks firmados son una integración de Stripe real; en modo simulado no existen.
-            self.skipTest("Webhooks de Stripe no aplican en modo simulado")
         d_tok, _, _ = register_doctor(self.client)
         chk = self.client.post("/api/subscriptions/checkout", {}, token=d_tok)
         self.assertEqual(chk.status, 201)
+        if chk.data.get("mode") == "simulado":
+            # Los webhooks firmados son una integración de Stripe real; en modo simulado no existen.
+            self.skipTest("Webhooks de Stripe no aplican en modo simulado")
         sid = chk.data["sessionId"]
         if self.ctx.stripe_mock is not None:
             s_missing, _ = self.ctx.stripe_mock.send_webhook(self.ctx.api_url, sid, omit_signature=True)
