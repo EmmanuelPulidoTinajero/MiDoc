@@ -69,4 +69,10 @@ describe('app.routes y auth.guards (HashLocationStrategy)', () => {
     expect(api.isDoctor()).toBe(true);
     expect(api.isPatient()).toBe(false);
   });
+
+  it('expone el perfil del profesional como ruta pública con deep link /doctores/:id', async () => {
+    setupSession(null);
+    await router.navigateByUrl('/doctores/abc-123');
+    expect(router.url).toBe('/doctores/abc-123');
+  });
 });

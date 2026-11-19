@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { routes } from './app.routes';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setApiConfigForTest } from './api.service';
 import { BusquedaComponent } from './busqueda.component';
@@ -17,7 +18,7 @@ describe('BusquedaComponent', () => {
     setApiConfigForTest('http://localhost:3000', 'test', '');
     TestBed.configureTestingModule({
       imports: [BusquedaComponent],
-      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideRouter(routes), provideHttpClient(), provideHttpClientTesting()],
     });
     httpMock = TestBed.inject(HttpTestingController);
   });
@@ -81,7 +82,7 @@ describe('BusquedaComponent', () => {
     );
     TestBed.configureTestingModule({
       imports: [BusquedaComponent],
-      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideRouter(routes), provideHttpClient(), provideHttpClientTesting()],
     });
     httpMock = TestBed.inject(HttpTestingController);
 

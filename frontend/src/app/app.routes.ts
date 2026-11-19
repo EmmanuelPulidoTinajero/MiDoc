@@ -10,6 +10,11 @@ import { PanelDoctorComponent } from './panel-doctor.component';
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'buscar' },
   { path: 'buscar', component: BusquedaComponent, title: 'Buscar profesionales · MiDoc' },
+  {
+    path: 'doctores/:id',
+    component: BusquedaComponent,
+    title: 'Perfil del profesional · MiDoc',
+  },
   { path: 'acceso', component: AccesoComponent, canActivate: [guestGuard], title: 'Acceso · MiDoc' },
   { path: 'citas', component: CitasComponent, canActivate: [authGuard], title: 'Citas · MiDoc' },
   {

@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   ApiService,
   DAYS,
@@ -46,6 +46,7 @@ export type DoctorSortOption = 'NAME' | 'PRICE_ASC' | 'PRICE_DESC' | 'AVAILABILI
 export class BusquedaComponent implements OnInit {
   readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   specialty = '';
   location = '';
@@ -80,6 +81,11 @@ export class BusquedaComponent implements OnInit {
 
   ngOnInit(): void {
     void this.search();
+    const doctorId = this.route.snapshot.paramMap.get('id');
+    if (doctorId) {
+      // Deep link: /doctores/:id abre el perfil directamente (L7).
+      void this.openById(doctorId);
+    }
   }
 
   hasActiveFilters(): boolean {
@@ -145,15 +151,30 @@ export class BusquedaComponent implements OnInit {
     this.bookingSuccess.set(false);
     this.consentMessage.set('');
     this.selectedSlot.set(null);
-    this.openingDoctorId.set(doctor.id);
+    await this.openById(doctor.id);
+    if (this.selected()) {
+      await this.router.navigate(['/doctores', doctor.id]);
+    }
+  }
+
+  async openById(doctorId: string): Promise<void> {
+    this.openingDoctorId.set(doctorId);
     try {
-      const detail = await this.api.get<Doctor>(`/api/doctors/${doctor.id}`);
+      const detail = await this.api.get<Doctor>(`/api/doctors/${doctorId}`);
       this.selected.set(detail);
       await this.loadSlots();
     } catch (error) {
       this.searchError.set(errorMessage(error));
     } finally {
       this.openingDoctorId.set(null);
+    }
+  }
+
+  closeProfile(): void {
+    this.selected.set(null);
+    this.selectedSlot.set(null);
+    if (this.route.snapshot.paramMap.get('id')) {
+      void this.router.navigate(['/buscar']);
     }
   }
 
