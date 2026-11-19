@@ -62,7 +62,7 @@ La API local queda en `http://localhost:3000` y Angular en `http://localhost:420
 ```powershell
 npm run build --prefix frontend
 Copy-Item infrastructure/terraform.tfvars.example infrastructure/terraform.tfvars
-# Configura jwt_secret, payment_mode ("test" o "live"), stripe_secret_key,
+# Configura jwt_secret, payment_mode ("test", "live" o "simulado"), stripe_secret_key,
 # stripe_webhook_secret (opcional), alert_email (opcional) y allow_demo_seed = false.
 terraform -chdir=infrastructure init
 terraform -chdir=infrastructure fmt -check -recursive
