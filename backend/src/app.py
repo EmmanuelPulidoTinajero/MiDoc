@@ -7,23 +7,23 @@ import os
 import secrets
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 # Los módulos de la ampliación viven junto a este archivo (en Lambda, en local y en pruebas).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import flujos  # noqa: E402
+import metricas  # noqa: E402
 import reglas  # noqa: E402
 import servicios_aws  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("midoc.app")
 
 
 def _load_jwt_secret() -> str:
     if os.environ.get("NODE_ENV") != "production":
         return os.environ.get("JWT_SECRET") or "local-development-only-change-me"
-    secret_id = os.environ.get("SECRETS_MANAGER_SECRET_ID")
+    secret_id = os.environ.get("SECRETS_MANAGER_SECRET_ID") or os.environ.get("APP_SECRET_ARN")
     if not secret_id:
         raise RuntimeError("SECRETS_MANAGER_SECRET_ID es obligatorio en producción")
     import boto3
@@ -36,6 +36,13 @@ def _load_jwt_secret() -> str:
 
 JWT_SECRET = _load_jwt_secret()
 _DATABASE_INITIALIZED = False
+
+
+def _allow_demo_seed() -> bool:
+    valor = os.environ.get("ALLOW_DEMO_SEED")
+    if valor is not None:
+        return valor.strip().lower() == "true"
+    return os.environ.get("NODE_ENV") != "production"
 
 
 def _database_connection():
@@ -64,29 +71,30 @@ def _database_connection():
             cursor.execute("SELECT pg_advisory_xact_lock(hashtext('midoc-schema-init'))")
             schema = (Path(__file__).with_name("schema.sql")).read_text(encoding="utf-8")
             cursor.execute(schema)
-            cursor.execute(
-                "INSERT INTO usuario (id, email, password_hash, rol) VALUES "
-                "('00000000-0000-0000-0000-000000000001', 'paciente@midoc.local', %s, 'PACIENTE'), "
-                "('00000000-0000-0000-0000-000000000002', 'doctor@midoc.local', %s, 'DOCTOR') "
-                "ON CONFLICT (email) DO NOTHING",
-                (_demo_hash("paciente-demo", "patient-demo-salt"), _demo_hash("doctor-demo", "doctor-demo-salt")),
-            )
-            cursor.execute(
-                "INSERT INTO perfil_doctor (id, usuario_id, nombre_completo, especialidad, ubicacion, precio_consulta) "
-                "VALUES ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'Dra. Ana López', 'Medicina familiar', 'Guadalajara', 600) "
-                "ON CONFLICT (usuario_id) DO NOTHING"
-            )
-            cursor.execute(
-                "INSERT INTO expediente (paciente_id, alergias, notas) VALUES ('00000000-0000-0000-0000-000000000001', ARRAY[]::text[], 'Expediente de demostración') "
-                "ON CONFLICT (paciente_id) DO NOTHING"
-            )
-            cursor.execute(
-                "INSERT INTO suscripcion (doctor_id, estado, monto, fecha_inicio, fecha_fin) "
-                "SELECT '10000000-0000-0000-0000-000000000001', 'ACTIVA', 20, CURRENT_DATE, CURRENT_DATE + 29 "
-                "WHERE NOT EXISTS (SELECT 1 FROM suscripcion "
-                "WHERE doctor_id = '10000000-0000-0000-0000-000000000001')"
-            )
-            flujos.semilla_postgres(cursor)
+            if _allow_demo_seed():
+                cursor.execute(
+                    "INSERT INTO usuario (id, email, password_hash, rol) VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 'paciente@midoc.local', %s, 'PACIENTE'), "
+                    "('00000000-0000-0000-0000-000000000002', 'doctor@midoc.local', %s, 'DOCTOR') "
+                    "ON CONFLICT (email) DO NOTHING",
+                    (_demo_hash("paciente-demo", "patient-demo-salt"), _demo_hash("doctor-demo", "doctor-demo-salt")),
+                )
+                cursor.execute(
+                    "INSERT INTO perfil_doctor (id, usuario_id, nombre_completo, especialidad, ubicacion, precio_consulta) "
+                    "VALUES ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'Dra. Ana López', 'Medicina familiar', 'Guadalajara', 600) "
+                    "ON CONFLICT (usuario_id) DO NOTHING"
+                )
+                cursor.execute(
+                    "INSERT INTO expediente (paciente_id, alergias, notas) VALUES ('00000000-0000-0000-0000-000000000001', ARRAY[]::text[], 'Expediente de demostración') "
+                    "ON CONFLICT (paciente_id) DO NOTHING"
+                )
+                cursor.execute(
+                    "INSERT INTO suscripcion (doctor_id, estado, monto, fecha_inicio, fecha_fin) "
+                    "SELECT '10000000-0000-0000-0000-000000000001', 'ACTIVA', 20, CURRENT_DATE, CURRENT_DATE + 29 "
+                    "WHERE NOT EXISTS (SELECT 1 FROM suscripcion "
+                    "WHERE doctor_id = '10000000-0000-0000-0000-000000000001')"
+                )
+                flujos.semilla_postgres(cursor)
         connection.commit()
         _DATABASE_INITIALIZED = True
     return connection
@@ -103,12 +111,13 @@ def _audit_record_access(patient_id: str, actor_id: str) -> None:
     """Escribe un evento complementario en DynamoDB; PostgreSQL conserva la bitácora transaccional.
 
     La bitácora de DynamoDB complementa, no autoriza: si falla, la lectura del expediente ya
-    autorizada sigue adelante y el error queda en los logs de CloudWatch.
+    autorizada sigue adelante y el error queda registrado sin PII.
     """
     try:
         servicios_aws.registrar_acceso(patient_id, actor_id)
     except Exception as error:  # noqa: BLE001 - la auditoría nunca debe bloquear la lectura
-        logger.warning("auditoria_dynamodb_fallida paciente=%s actor=%s error=%s", patient_id, actor_id, error)
+        metricas.registrar_metrica("DynamoAuditErrors", 1)
+        logger.warning("auditoria_dynamodb_fallida error=%s", type(error).__name__)
 
 
 def _query(sql: str, params: tuple = (), fetch: bool = True):
@@ -121,58 +130,6 @@ def _query(sql: str, params: tuple = (), fetch: bool = True):
         return result
     finally:
         connection.close()
-
-
-def _db_doctors(specialty: str):
-    rows = _query(
-        "SELECT id::text, nombre_completo, especialidad, ubicacion, precio_consulta "
-        "FROM perfil_doctor WHERE (%s = '' OR lower(especialidad) LIKE '%%' || lower(%s) || '%%') ORDER BY nombre_completo",
-        (specialty, specialty),
-    )
-    return [{"id": row[0], "name": row[1], "specialty": row[2], "location": row[3], "price": float(row[4])} for row in rows]
-
-
-def _db_user(email: str, password: str):
-    rows = _query("SELECT id::text, email, rol, password_hash FROM usuario WHERE email = %s", (email,))
-    if not rows or not verify_password(password, rows[0][3]):
-        return None
-    return {"id": rows[0][0], "email": rows[0][1], "role": rows[0][2]}
-
-
-def _db_appointment(user_id: str, doctor_id: str, date_time: str):
-    rows = _query(
-        "INSERT INTO cita (paciente_id, doctor_id, fecha_hora) VALUES (%s, %s, %s) RETURNING id::text",
-        (user_id, doctor_id, date_time),
-    )
-    return {"id": rows[0][0], "patientId": user_id, "doctorId": doctor_id, "dateTime": date_time, "status": "PENDIENTE"}
-
-
-def _db_doctor_id(user_id: str):
-    rows = _query("SELECT id::text FROM perfil_doctor WHERE usuario_id = %s", (user_id,))
-    return rows[0][0] if rows else None
-
-
-def _db_consent(patient_id: str, doctor_id: str, granted: bool):
-    rows = _query(
-        "INSERT INTO consentimiento_expediente (paciente_id, doctor_id, estado_acceso) VALUES (%s, %s, %s) "
-        "ON CONFLICT (paciente_id, doctor_id) DO UPDATE SET estado_acceso = EXCLUDED.estado_acceso, fecha_actualizacion = now() "
-        "RETURNING estado_acceso, fecha_actualizacion",
-        (patient_id, doctor_id, granted),
-    )
-    return {"patientId": patient_id, "doctorId": doctor_id, "granted": rows[0][0], "updatedAt": rows[0][1].isoformat()}
-
-
-def _db_has_consent(patient_id: str, doctor_id: str):
-    rows = _query("SELECT estado_acceso FROM consentimiento_expediente WHERE paciente_id = %s AND doctor_id = %s", (patient_id, doctor_id))
-    return bool(rows and rows[0][0])
-
-
-def _db_record(patient_id: str, actor_id: str):
-    rows = _query("SELECT paciente_id::text, alergias, notas FROM expediente WHERE paciente_id = %s", (patient_id,))
-    _query("INSERT INTO bitacora_acceso_expediente (paciente_id, actor_id) VALUES (%s, %s)", (patient_id, actor_id), fetch=False)
-    if not rows:
-        return {"patient_id": patient_id, "allergies": [], "notes": ""}
-    return {"patient_id": rows[0][0], "allergies": rows[0][1] or [], "notes": rows[0][2] or ""}
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -191,20 +148,36 @@ def _demo_hash(password: str, salt: str) -> str:
     return hash_password(password, salt.encode())
 
 
-DB = {
-    "users": [
-        {"id": "u-patient-1", "email": "paciente@midoc.local", "role": "PACIENTE", "password_hash": _demo_hash("paciente-demo", "patient-demo-salt")},
-        {"id": "u-doctor-1", "email": "doctor@midoc.local", "role": "DOCTOR", "password_hash": _demo_hash("doctor-demo", "doctor-demo-salt")},
-    ],
-    "doctors": [
-        {"id": "d-1", "user_id": "u-doctor-1", "name": "Dra. Ana López", "specialty": "Medicina familiar", "location": "Guadalajara", "price": 600}
-    ],
-    "appointments": [],
-    "consents": [],
-    "records": [{"patient_id": "u-patient-1", "allergies": [], "notes": "Expediente de demostración"}],
-    "prescriptions": [],
-    "subscriptions": [{"doctor_id": "d-1", "status": "ACTIVA", "amount": 20}],
-}
+def _empty_db() -> dict:
+    return {
+        "users": [],
+        "doctors": [],
+        "appointments": [],
+        "consents": [],
+        "records": [],
+        "prescriptions": [],
+        "subscriptions": [],
+    }
+
+
+def _demo_db() -> dict:
+    return {
+        "users": [
+            {"id": "u-patient-1", "email": "paciente@midoc.local", "role": "PACIENTE", "password_hash": _demo_hash("paciente-demo", "patient-demo-salt")},
+            {"id": "u-doctor-1", "email": "doctor@midoc.local", "role": "DOCTOR", "password_hash": _demo_hash("doctor-demo", "doctor-demo-salt")},
+        ],
+        "doctors": [
+            {"id": "d-1", "user_id": "u-doctor-1", "name": "Dra. Ana López", "specialty": "Medicina familiar", "location": "Guadalajara", "price": 600}
+        ],
+        "appointments": [],
+        "consents": [],
+        "records": [{"patient_id": "u-patient-1", "allergies": [], "notes": "Expediente de demostración"}],
+        "prescriptions": [],
+        "subscriptions": [{"doctor_id": "d-1", "status": "ACTIVA", "amount": 20}],
+    }
+
+
+DB = _demo_db() if _allow_demo_seed() else _empty_db()
 
 
 def _b64(value: bytes) -> str:
@@ -244,8 +217,8 @@ def _response(status: int, body: dict) -> dict:
         "headers": {
             "content-type": "application/json; charset=utf-8",
             "access-control-allow-origin": "*",
-            "access-control-allow-headers": "content-type, authorization",
-            "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
+            "access-control-allow-headers": "content-type, authorization, idempotency-key",
+            "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
         },
         "body": json.dumps(body, ensure_ascii=False),
     }
@@ -254,13 +227,20 @@ def _response(status: int, body: dict) -> dict:
 _APP = sys.modules[__name__]
 
 
-def handle(method: str, path: str, headers: dict | None = None, body: dict | None = None) -> dict:
+def handle(
+    method: str,
+    path: str,
+    headers: dict | None = None,
+    body: dict | None = None,
+    raw_body: bytes | str | None = None,
+    client_ip: str | None = None,
+) -> dict:
     """Convierte los errores de validación y de base de datos en respuestas JSON (400/404/409)
     en lugar de un 500 sin cuerpo, para que el frontend pueda mostrar el mensaje."""
     if body is not None and not isinstance(body, dict):
         return _response(400, {"error": "El cuerpo de la petición debe ser un objeto JSON"})
     try:
-        return _handle(method, path, headers, body)
+        return _handle(method, path, headers, body, raw_body=raw_body, client_ip=client_ip)
     except reglas.ErrorApi as error:
         return _response(error.status, {"error": error.mensaje})
     except Exception as error:
@@ -271,11 +251,18 @@ def handle(method: str, path: str, headers: dict | None = None, body: dict | Non
             return _response(404, {"error": "Un registro relacionado no existe"})
         if codigo == "23505":
             return _response(409, {"error": "El registro ya existe"})
-        logger.exception("Error no controlado en %s %s", method, path)
+        logger.exception("Error no controlado en %s %s", method, path.split("?", 1)[0])
         return _response(500, {"error": "Error interno del servidor"})
 
 
-def _handle(method: str, path: str, headers: dict | None = None, body: dict | None = None) -> dict:
+def _handle(
+    method: str,
+    path: str,
+    headers: dict | None = None,
+    body: dict | None = None,
+    raw_body: bytes | str | None = None,
+    client_ip: str | None = None,
+) -> dict:
     headers = headers or {}
     body = body or {}
     parsed = urlparse(path)
@@ -285,21 +272,13 @@ def _handle(method: str, path: str, headers: dict | None = None, body: dict | No
         return _response(204, {})
     if method == "GET" and parsed.path == "/health":
         return _response(200, {"status": "ok", "service": "midoc-api"})
+    if method == "POST" and parsed.path == "/api/webhooks/stripe":
+        return flujos.webhook_stripe(_APP, headers, raw_body, body)
     if method == "GET" and parsed.path == "/api/doctors":
-        # Filtros: specialty (original), location y q; solo doctores con suscripción vigente.
+        # Filtros: specialty (original), location, q y sort; solo doctores con suscripción vigente.
         return flujos.buscar_doctores(_APP, query)
     if method == "POST" and parsed.path == "/api/auth/login":
-        email = body.get("email")
-        email = email.strip().lower() if isinstance(email, str) else ""
-        if _database_ready():
-            user = _db_user(email, body.get("password", "")) if _valid(body.get("password")) else None
-            if not user:
-                return _response(401, {"error": "Credenciales inválidas"})
-            return _response(200, {"token": create_token(user), "user": user})
-        user = next((item for item in DB["users"] if item["email"] == email and _valid(body.get("password")) and verify_password(body["password"], item["password_hash"])), None)
-        if not user:
-            return _response(401, {"error": "Credenciales inválidas"})
-        return _response(200, {"token": create_token(user), "user": {"id": user["id"], "email": user["email"], "role": user["role"]}})
+        return flujos.iniciar_sesion(_APP, body, headers, client_ip=client_ip)
 
     # Registro, perfil de doctor y disponibilidad (no requieren sesión).
     publica = flujos.atender_publico(_APP, method, parsed.path, query, body)
@@ -309,6 +288,10 @@ def _handle(method: str, path: str, headers: dict | None = None, body: dict | No
     user = authenticate(headers)
     if not user:
         return _response(401, {"error": "Autenticación requerida"})
+    metricas.establecer_rol(user.get("role", "ANONYMOUS"))
+
+    if method == "POST" and parsed.path == "/api/auth/refresh":
+        return flujos.refrescar_sesion(_APP, user)
 
     if method == "POST" and parsed.path == "/api/appointments":
         if user["role"] != "PACIENTE":
@@ -316,7 +299,7 @@ def _handle(method: str, path: str, headers: dict | None = None, body: dict | No
         if not _valid(body.get("doctorId")) or not _valid(body.get("dateTime")):
             return _response(400, {"error": "doctorId y dateTime son requeridos"})
         # Valida doctor con suscripción, fecha futura y que el horario esté libre.
-        return flujos.agendar_cita(_APP, user, body)
+        return flujos.agendar_cita(_APP, user, body, headers)
 
     if method == "GET" and parsed.path == "/api/appointments":
         # Mismos campos que antes más nombres del doctor/paciente; filtro opcional ?status=
@@ -335,17 +318,7 @@ def _handle(method: str, path: str, headers: dict | None = None, body: dict | No
         return flujos.actualizar_estado_cita(_APP, user, appointment_id, body)
 
     if method == "POST" and parsed.path == "/api/consents":
-        if user["role"] != "PACIENTE":
-            return _response(403, {"error": "Sólo el paciente administra consentimientos"})
-        if not _valid(body.get("doctorId")) or not isinstance(body.get("granted"), bool):
-            return _response(400, {"error": "doctorId y granted son requeridos"})
-        flujos.validar_doctor_para_consentimiento(_APP, body["doctorId"])
-        if _database_ready():
-            return _response(200, {"data": _db_consent(user["sub"], body["doctorId"], body["granted"])})
-        consent = {"patientId": user["sub"], "doctorId": body["doctorId"], "granted": body["granted"], "updatedAt": datetime.now(timezone.utc).isoformat()}
-        DB["consents"] = [item for item in DB["consents"] if not (item["patientId"] == user["sub"] and item["doctorId"] == body["doctorId"])]
-        DB["consents"].append(consent)
-        return _response(200, {"data": consent})
+        return flujos.administrar_consentimiento(_APP, user, body)
 
     if method == "GET" and parsed.path == "/api/records":
         # Mismos campos que antes (patient_id, allergies, notes) más datos clínicos,
@@ -366,15 +339,15 @@ def _handle(method: str, path: str, headers: dict | None = None, body: dict | No
             return _response(400, {"error": "patientId, appointmentId y diagnosis son requeridos"})
         # Requiere suscripción y consentimiento; marca la cita COMPLETADA, crea la
         # receta con su PDF en S3 y la consulta aparece en el historial del paciente.
-        return flujos.registrar_consulta(_APP, user, body)
+        return flujos.registrar_consulta(_APP, user, body, headers)
 
     if method == "GET" and parsed.path == "/api/subscriptions":
-        # Mismos campos que antes más vigencia (start, end, active) del periodo actual.
         return flujos.ver_suscripcion(_APP, user)
 
-    # Rutas de la ampliación: expediente editable, documentos en S3, pago de la
-    # suscripción, horario del doctor, estado de citas, recetas, etc.
-    extra = flujos.atender_autenticado(_APP, user, method, parsed.path, query, body)
+    if method == "POST" and parsed.path == "/api/subscriptions/pay":
+        return _response(410, {"error": "El pago simulado fue retirado; utiliza POST /api/subscriptions/checkout"})
+
+    extra = flujos.atender_autenticado(_APP, user, method, parsed.path, query, body, headers)
     if extra is not None:
         return extra
 

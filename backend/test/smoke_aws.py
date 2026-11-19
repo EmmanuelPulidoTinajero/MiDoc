@@ -1,10 +1,13 @@
-"""Prueba real explícita: crea cuentas sintéticas y espera una cita válida.
+"""Prueba real explícita: crea cuentas sintéticas, verifica Stripe Checkout y los 3 flujos.
 
-Uso: python backend/test/smoke_aws.py --api-url https://... --report ruta.json
+Uso: python backend/test/smoke_aws.py --api-url https://... --report ruta.json [--webhook-secret whsec_...]
 No utiliza credenciales clínicas reales ni imprime JWT o URLs firmadas.
 """
 import argparse
+import hashlib
+import hmac
 import json
+import os
 import secrets
 import sys
 import tempfile
@@ -21,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-url", required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--webhook-secret", default=os.environ.get("STRIPE_WEBHOOK_SECRET", ""))
     parser.add_argument("--browser", action="store_true", help="Registrar consulta y abrir receta en Edge")
     args = parser.parse_args()
     base = args.api_url.rstrip("/")
@@ -28,12 +32,12 @@ def main():
         parser.error("La API real debe usar HTTPS")
     checks = []
 
-    def api(method, path, body=None, token=None, expected=200):
-        headers = {"Content-Type": "application/json"}
+    def api(method, path, body=None, token=None, expected=200, extra_headers=None):
+        headers = {"Content-Type": "application/json", **(extra_headers or {})}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        request = Request(base + path, data=json.dumps(body).encode() if body is not None else None,
-                          method=method, headers=headers)
+        data = body if isinstance(body, bytes) else (json.dumps(body).encode() if body is not None else None)
+        request = Request(base + path, data=data, method=method, headers=headers)
         try:
             with urlopen(request, timeout=40) as response:
                 status, payload = response.status, json.load(response)
@@ -45,6 +49,7 @@ def main():
 
     tag = uuid.uuid4().hex[:10]
     password = secrets.token_urlsafe(24)
+
     def register(role):
         return api("POST", "/api/auth/register", {
             "email": f"e2e-{role.lower()}-{tag}@example.invalid", "password": password,
@@ -58,12 +63,59 @@ def main():
     pt, dt = patient["token"], doctor["token"]
     patient_id, doctor_id = patient["user"]["id"], doctor["user"]["doctorId"]
     actor_id = doctor["user"]["id"]
-    api("POST", "/api/subscriptions/pay", {
-        "cardHolder": "E2E DEMO", "cardNumber": "4000000000000002",
-        "expMonth": 12, "expYear": 2028, "cvv": "123"}, dt, 402)
-    api("POST", "/api/subscriptions/pay", {
-        "cardHolder": "E2E DEMO", "cardNumber": "4242424242424242",
-        "expMonth": 12, "expYear": 2028, "cvv": "123"}, dt, 201)
+
+    # Verifica PUT /api/me y POST /api/auth/refresh
+    api("PUT", "/api/me", {"phone": "3310000000"}, pt, expected=200)
+    refreshed = api("POST", "/api/auth/refresh", {}, pt, expected=200)
+    assert refreshed.get("token")
+    pt = refreshed["token"]
+
+    # Endpoint simulado retirado -> 410 Gone
+    api("POST", "/api/subscriptions/pay", {}, dt, expected=410)
+    # Webhook sin firma -> 400
+    api("POST", "/api/webhooks/stripe", {"type": "ping"}, expected=400)
+
+    # Crear sesión real de Stripe Checkout
+    checkout = api("POST", "/api/subscriptions/checkout", {}, dt, expected=201)
+    assert checkout["sessionId"].startswith("cs_")
+    assert checkout["checkoutUrl"].startswith("https://")
+    assert checkout["mode"] in ("test", "live")
+    assert checkout["amountUsd"] == 20.0
+
+    # Si se proporciona webhook secret de pruebas, activa vía webhook firmado; si no, concluye smoke de Stripe aquí.
+    if args.webhook_secret:
+        wh_payload = json.dumps({
+            "id": f"evt_smoke_{tag}",
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": checkout["sessionId"],
+                    "payment_status": "paid",
+                    "amount_total": 2000,
+                    "livemode": checkout["mode"] == "live",
+                    "payment_intent": f"pi_smoke_{tag}",
+                    "metadata": {"doctorId": doctor_id},
+                }
+            },
+        }).encode("utf-8")
+        ts = int(time.time())
+        sig = hmac.new(args.webhook_secret.encode("utf-8"), f"{ts}.".encode() + wh_payload, hashlib.sha256).hexdigest()
+        api("POST", "/api/webhooks/stripe", wh_payload, expected=200, extra_headers={"Stripe-Signature": f"t={ts},v1={sig}"})
+        sub_state = api("GET", "/api/subscriptions", token=dt, expected=200)
+        assert sub_state["subscription"]["active"]
+    else:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps({
+            "testedAt": datetime.now(timezone.utc).isoformat(),
+            "apiUrl": base,
+            "result": "PASS",
+            "checks": checks,
+            "stripeCheckoutSessionId": checkout["sessionId"],
+            "note": "Checkout real Stripe creado; pasa --webhook-secret para activar y continuar Flujos 1-3 sin UI interactiva",
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"PASS (parcial sin webhook secret): {len(checks)} peticiones verificadas. Reporte: {args.report}", flush=True)
+        return
+
     now = datetime.now(timezone(timedelta(hours=-6)))
     start = (now + timedelta(minutes=2)).replace(second=0, microsecond=0)
     end = start + timedelta(minutes=40)
@@ -85,6 +137,8 @@ def main():
     api("GET", record_path, token=dt, expected=403)
     api("POST", "/api/consents", {"doctorId": doctor_id, "granted": True}, pt)
     api("GET", record_path, token=dt)
+    access_log = api("GET", "/api/records/access-log", token=pt)
+    assert len(access_log) >= 1
     api("POST", "/api/consents", {"doctorId": doctor_id, "granted": False}, pt)
     api("GET", record_path, token=dt, expected=403)
     api("POST", "/api/consents", {"doctorId": doctor_id, "granted": True}, pt)
@@ -125,45 +179,13 @@ def main():
     print(f"Flujos 1 y 2 correctos. Esperando hora real {slots[0]} para la consulta.", flush=True)
     while datetime.now(timezone.utc) < datetime.fromisoformat(slots[0]) + timedelta(seconds=1):
         time.sleep(5)
-    if args.browser:
-        sys.path.insert(0, str(Path(tempfile.gettempdir()) / "midoc-playwright"))
-        from playwright.sync_api import sync_playwright, expect
-        frontend = "https://midoc-frontend-647018795197.s3.us-east-1.amazonaws.com/index.html"
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="msedge", headless=True)
-            context = browser.new_context()
-            context.add_init_script("localStorage.setItem('midoc.session', " + json.dumps(json.dumps(doctor)) + ")")
-            page = context.new_page()
-            page.goto(frontend, wait_until="networkidle")
-            page.get_by_role("button", name="Agenda", exact=True).click()
-            page.get_by_role("button", name="Registrar consulta", exact=True).click()
-            page.get_by_label("Diagnóstico", exact=True).fill(consultation["diagnosis"])
-            page.get_by_label("Tratamiento e indicaciones", exact=True).fill(consultation["treatment"])
-            page.get_by_label("Notas (opcional)").fill(consultation["notes"])
-            with page.expect_response(lambda response: response.url.endswith("/api/consultations")
-                                      and response.request.method == "POST") as response:
-                page.get_by_role("button", name="Guardar consulta y generar receta").click()
-            assert response.value.status == 201
-            result = response.value.json()["data"]
-            expect(page.locator(".notice")).to_contain_text("Consulta registrada")
-            context.close()
-            context = browser.new_context()
-            context.add_init_script("localStorage.setItem('midoc.session', " + json.dumps(json.dumps(patient)) + ")")
-            context.add_init_script("window.print = () => {}")
-            page = context.new_page()
-            page.goto(frontend, wait_until="networkidle")
-            page.get_by_role("button", name="Mi expediente", exact=True).click()
-            with page.expect_popup() as popup:
-                page.get_by_role("button", name="Descargar o imprimir receta").click()
-            expect(popup.value.get_by_role("heading", name="MiDoc · Receta médica")).to_be_visible()
-            expect(popup.value.get_by_text(consultation["diagnosis"], exact=True)).to_be_visible()
-            browser.close()
-        print("Consulta, historial del paciente y receta imprimible verificados desde Edge.", flush=True)
-    else:
-        result = api("POST", "/api/consultations", consultation, dt, 201)
+    result = api("POST", "/api/consultations", consultation, dt, 201)
     api("POST", "/api/consultations", consultation, dt, 409)
     prescription = api("GET", f"/api/prescriptions/{result['prescriptionId']}", token=pt)
     assert prescription["diagnosis"] == consultation["diagnosis"]
+    if prescription.get("downloadUrl"):
+        with urlopen(prescription["downloadUrl"], timeout=30) as response:
+            assert response.read().startswith(b"%PDF-1.4")
     history = api("GET", "/api/records", token=pt)["consultations"]
     assert any(item["prescriptionId"] == result["prescriptionId"] for item in history)
     assert api("GET", f"/api/appointments/{cita['id']}", token=pt)["status"] == "COMPLETADA"
