@@ -23,11 +23,23 @@
       >
         <div dsPageActions class="row-start">
           <ds-badge [status]="subscriptionStatusKey()" />
-          <ds-badge [tone]="paymentMode() === 'live' ? 'info' : 'warning'">
-            {{ paymentMode() === 'live' ? 'Producción (Stripe Live)' : 'Modo prueba (Stripe Sandbox)' }}
-          </ds-badge>
+          @if (paymentMode() === 'simulado') {
+            <ds-badge tone="warning">Pago simulado (sin Stripe)</ds-badge>
+          } @else {
+            <ds-badge [tone]="paymentMode() === 'live' ? 'info' : 'warning'">
+              {{ paymentMode() === 'live' ? 'Producción (Stripe Live)' : 'Modo prueba (Stripe Sandbox)' }}
+            </ds-badge>
+          }
         </div>
       </ds-page-header>
+
+      @if (paymentMode() === 'simulado') {
+        <ds-alert-banner
+          tone="info"
+          title="Pagos en modo simulado"
+          message="La suscripción se activa sin cargo real ni llave de Stripe. Cuando se configure la llave sk_test_, el checkout abrirá Stripe Checkout y el cobro será real en modo de prueba."
+        />
+      }
 
       <div class="stack">
         @if (subscription(); as s) {
@@ -115,9 +127,13 @@
                         }
                       </td>
                       <td>
-                        <ds-badge [tone]="payment.paymentMode === 'live' ? 'info' : 'warning'">
-                          {{ payment.paymentMode === 'live' ? 'Live' : 'Test' }}
-                        </ds-badge>
+                        @if (payment.paymentMode === 'simulado') {
+                          <ds-badge tone="warning">Simulado</ds-badge>
+                        } @else {
+                          <ds-badge [tone]="payment.paymentMode === 'live' ? 'info' : 'warning'">
+                            {{ payment.paymentMode === 'live' ? 'Live' : 'Test' }}
+                          </ds-badge>
+                        }
                       </td>
                       <td class="num">${{ payment.amount }} USD</td>
                       <td><ds-badge [status]="payment.status" /></td>
