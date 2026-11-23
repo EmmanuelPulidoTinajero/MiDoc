@@ -9,6 +9,7 @@ from tests.e2e.harness.aws_inspector import (
     wait_for_cloudwatch_metrics,
 )
 from tests.e2e.harness.config import get_active_context
+from tests.e2e.harness.data_factory import register_doctor
 
 
 class TestTier2F14ObservabilityBoundaries(unittest.TestCase):
